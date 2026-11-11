@@ -1,0 +1,1885 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Flüssigkeiten mischen</title>
+<style>
+  :root {
+    --ink: #1b2530;
+    --ink-soft: #5a6878;
+    --panel: rgba(255, 255, 255, 0.84);
+    --line: rgba(20, 35, 55, 0.12);
+    --accent: #0a6fd6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #eef2f6; color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #tank {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    display: block; touch-action: none; cursor: crosshair;
+  }
+  #ring {
+    position: fixed; left: 0; top: 0; pointer-events: none;
+    border: 1.5px solid rgba(255, 255, 255, 0.95);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+    border-radius: 50%; transform: translate(-50%, -50%);
+    display: none;
+  }
+
+  #panel {
+    position: fixed; top: 14px; left: 14px; width: 264px;
+    max-height: calc(100% - 28px); overflow: auto;
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 10px 34px rgba(15, 30, 50, 0.2);
+    user-select: none; -webkit-user-select: none;
+  }
+  #panel header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px;
+  }
+  #panel h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: 0.01em; }
+  #toggle {
+    border: 0; background: none; cursor: pointer; color: var(--ink-soft);
+    width: 28px; height: 28px; border-radius: 8px; font-size: 16px; line-height: 1;
+  }
+  #toggle:hover { background: rgba(20, 35, 55, 0.08); }
+  #body { padding: 0 14px 14px; }
+  /* nicht display:none – das Kamerabild muss (v. a. in Safari) weiterlaufen */
+  #panel.closed #body { height: 0; padding: 0; overflow: hidden; }
+  #panel.closed { width: auto; }
+
+  .label {
+    font-size: 11px; font-weight: 650; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--ink-soft); margin: 14px 0 7px;
+  }
+  .label:first-child { margin-top: 2px; }
+
+  .swatches { display: flex; gap: 9px; align-items: center; }
+  .sw {
+    width: 38px; height: 38px; border-radius: 50%; padding: 0; cursor: pointer;
+    border: 2px solid #fff; outline: 1px solid var(--line);
+    box-shadow: inset 0 -5px 9px rgba(0, 0, 0, 0.16);
+    transition: transform 0.12s;
+  }
+  .sw:hover { transform: scale(1.06); }
+  .sw[aria-checked="true"] { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+  .sw.water {
+    background:
+      radial-gradient(circle at 35% 30%, #fff 0 18%, transparent 19%),
+      linear-gradient(160deg, #f6fbff, #d8eaf8);
+  }
+  .pick {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-soft);
+  }
+  .pick input {
+    width: 34px; height: 28px; padding: 0; border: 1px solid var(--line);
+    border-radius: 7px; background: #fff; cursor: pointer;
+  }
+  .pick input:disabled { opacity: 0.35; cursor: default; }
+
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .seg3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  button.b {
+    font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+    padding: 8px 6px; border-radius: 9px;
+    border: 1px solid var(--line); background: rgba(255, 255, 255, 0.75);
+  }
+  button.b:hover { background: #fff; border-color: rgba(20, 35, 55, 0.28); }
+  button.b[aria-pressed="true"] {
+    background: var(--ink); color: #fff; border-color: var(--ink);
+  }
+
+  .slider { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; margin: 7px 0; }
+  .slider span { font-size: 13px; }
+  input[type="range"] { width: 100%; margin: 0; accent-color: var(--ink); cursor: pointer; }
+
+  select.sel {
+    width: 100%; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+    padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: #fff;
+  }
+  #meter { display: flex; align-items: flex-end; gap: 4px; height: 28px; margin: 9px 0 6px; }
+  #meter i { flex: 1; height: 2px; border-radius: 2px; background: var(--ink); }
+  [hidden] { display: none !important; }
+  button.b.wide { width: 100%; margin-top: 2px; }
+  button.b:disabled { opacity: 0.45; cursor: default; }
+  .status { font-size: 12px; color: var(--ink-soft); margin-top: 7px; }
+  .status:empty { display: none; }
+  .status.err { color: #b3261e; }
+  #camVideo {
+    display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+    margin: 8px 0 6px; border-radius: 9px; background: #10161d;
+    transform: scaleX(-1);
+  }
+
+  .hint {
+    margin: 14px 0 0; padding-top: 11px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-soft);
+  }
+  .hint b { color: var(--ink); font-weight: 600; }
+
+  #error {
+    position: fixed; inset: 0; display: none; place-items: center;
+    padding: 24px; text-align: center; font-size: 16px; background: #eef2f6;
+  }
+
+  @media (max-width: 560px) {
+    #panel { top: 8px; left: 8px; width: 232px; max-height: calc(100% - 16px); }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="tank"></canvas>
+<div id="ring"></div>
+
+<aside id="panel">
+  <header>
+    <h1>Flüssigkeiten mischen</h1>
+    <button id="toggle" title="Bedienfeld ein-/ausklappen" aria-label="Bedienfeld ein-/ausklappen">–</button>
+  </header>
+  <div id="body">
+    <div class="label">Flüssigkeit</div>
+    <div class="swatches" role="radiogroup" aria-label="Flüssigkeit auswählen">
+      <button class="sw" data-i="0" role="radio" aria-checked="true" title="Flüssigkeit A (Taste 1)"></button>
+      <button class="sw" data-i="1" role="radio" aria-checked="false" title="Flüssigkeit B (Taste 2)"></button>
+      <button class="sw" data-i="2" role="radio" aria-checked="false" title="Flüssigkeit C (Taste 3)"></button>
+      <button class="sw water" data-i="3" role="radio" aria-checked="false" title="Klares Wasser zum Verdünnen (Taste 4)"></button>
+      <label class="pick" title="Farbe der gewählten Flüssigkeit ändern">Farbe
+        <input type="color" id="colorPick" value="#0a8cf2">
+      </label>
+    </div>
+
+    <div class="label">Werkzeug</div>
+    <div class="seg">
+      <button class="b" id="toolPour" aria-pressed="true">Einfüllen</button>
+      <button class="b" id="toolStir" aria-pressed="false">Rühren</button>
+    </div>
+
+    <div class="label">Modi – an / aus</div>
+    <div class="seg3">
+      <button class="b" id="modeMouse" aria-pressed="true" title="Reaktion auf Maus und Touch">Maus</button>
+      <button class="b" id="auto" aria-pressed="false" title="Ein unsichtbarer Rührstab rührt von selbst">Automatik</button>
+      <button class="b" id="modeAudio" aria-pressed="false" title="Reaktion auf Ton">Audio</button>
+    </div>
+    <div class="label" id="camModesLabel">Kamera-Modi – an / aus</div>
+    <div class="grid2">
+      <button class="b" id="modeCam" aria-pressed="false" title="Bewegungen vor der Kamera schieben die Flüssigkeit">Bewegung</button>
+      <button class="b" id="modeOutline" aria-pressed="false" title="Die Umrisse des Kamerabilds werden grob gezeichnet und verwischen">Umrisse</button>
+    </div>
+    <div class="status" id="audioStatus" role="status"></div>
+    <div class="status" id="camStatus" role="status"></div>
+
+    <div id="audioBox" hidden>
+      <div class="label">Audioquelle</div>
+      <select class="sel" id="audioSrc" aria-label="Audioquelle wählen">
+        <optgroup label="Mikrofon / Eingang" id="micGroup">
+          <option value="mic:">Standard-Mikrofon</option>
+        </optgroup>
+        <optgroup label="Weitere Quellen" id="otherGroup">
+          <option value="system">System- oder Tab-Ton …</option>
+          <option value="file">Audiodatei öffnen …</option>
+        </optgroup>
+      </select>
+      <div id="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <label class="slider"><span>Empfindlichkeit</span>
+        <input type="range" id="sens" min="0.3" max="4" step="0.1" value="1"></label>
+      <button class="b wide" id="audioColor" aria-pressed="true" title="Bei lauten Stellen wird zusätzlich Farbe eingespritzt">Farbe im Takt einspritzen</button>
+    </div>
+    <input type="file" id="audioFile" accept="audio/*,video/*" hidden>
+
+    <div id="camBox" hidden>
+      <div class="label">Kamera</div>
+      <select class="sel" id="camSrc" aria-label="Kamera wählen">
+        <option value="">Standard-Kamera</option>
+      </select>
+      <video id="camVideo" muted playsinline></video>
+      <div id="motionBox" hidden>
+        <div class="label">Bewegung</div>
+        <label class="slider"><span>Empfindlichkeit</span>
+          <input type="range" id="camSens" min="0.3" max="4" step="0.1" value="1"></label>
+        <div class="label">Farbe bei Bewegung</div>
+        <div class="seg3" id="camColorSeg">
+          <button class="b" data-cc="off" aria-pressed="true" title="Bewegung schiebt die Flüssigkeit nur">Aus</button>
+          <button class="b" data-cc="pick" aria-pressed="false" title="Wo sich etwas bewegt, wird die oben gewählte Flüssigkeit eingespritzt">Gewählte</button>
+          <button class="b" data-cc="random" aria-pressed="false" title="Wo sich etwas bewegt, werden zufällige, ständig wechselnde Farben eingespritzt">Zufall</button>
+        </div>
+      </div>
+      <div id="outlineBox" hidden>
+        <div class="label">Umrisse – Stil</div>
+        <div class="seg3" id="outlineSeg">
+          <button class="b" data-os="ink" aria-pressed="true" title="Dunkle Tuschelinien über der Flüssigkeit, die verwischen und verblassen">Tusche</button>
+          <button class="b" data-os="glow" aria-pressed="false" title="Bunt leuchtende Linien, Farbe je nach Richtung der Kante">Leuchten</button>
+          <button class="b" data-os="dye" aria-pressed="false" title="Die Umrisse werden mit der gewählten Flüssigkeit dauerhaft ins Becken gemalt">Einfärben</button>
+        </div>
+        <label class="slider"><span>Verwischen</span>
+          <input type="range" id="outSmear" min="0" max="1" step="0.02" value="0.5"></label>
+        <label class="slider"><span>Detail</span>
+          <input type="range" id="outDetail" min="0" max="1" step="0.02" value="0.6"></label>
+      </div>
+    </div>
+
+    <div class="label">Einstellungen</div>
+    <label class="slider"><span>Pinselgröße</span>
+      <input type="range" id="brush" min="0.015" max="0.16" step="0.005" value="0.05"></label>
+    <label class="slider"><span>Zähigkeit</span>
+      <input type="range" id="visc" min="0" max="3" step="0.05" value="0.35"></label>
+    <label class="slider"><span>Wirbel</span>
+      <input type="range" id="curl" min="0" max="40" step="1" value="14"></label>
+
+    <div class="label">Startbild</div>
+    <div class="grid2">
+      <button class="b" data-preset="0">Zwei Hälften</button>
+      <button class="b" data-preset="1">Schichten</button>
+      <button class="b" data-preset="2">Tropfen</button>
+      <button class="b" data-preset="3">Nur Wasser</button>
+    </div>
+
+    <button class="b wide" id="pause" aria-pressed="false" style="margin-top:6px">Pause</button>
+
+    <p class="hint">
+      <b>Maus:</b> Ziehen wendet das Werkzeug an, rechte Maustaste oder Shift rührt nur.
+      <b>Audio:</b> acht Düsen am Boden schießen im Takt nach oben – Bässe links, Höhen rechts.
+      <b>Kamera:</b> Bewegungen schieben die Flüssigkeit mit; „Umrisse“ zeichnet das Kamerabild als verwischende Linien.
+      <b>Leertaste</b> pausiert.
+      <a href="fluessigkeiten-3d.html" style="color:inherit">Zur 3D-Version</a>
+    </p>
+  </div>
+</aside>
+
+<div id="error">Dieser Browser unterstützt die benötigten WebGL-Funktionen leider nicht.</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/*  WebGL-Kontext                                                      */
+/* ------------------------------------------------------------------ */
+const canvas = document.getElementById('tank');
+const ctxOpts = { alpha: false, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: false };
+
+function fail() {
+  document.getElementById('error').style.display = 'grid';
+  document.getElementById('panel').style.display = 'none';
+}
+
+let gl = canvas.getContext('webgl2', ctxOpts);
+const isGL2 = !!gl;
+if (!gl) gl = canvas.getContext('webgl', ctxOpts) || canvas.getContext('experimental-webgl', ctxOpts);
+if (!gl) { fail(); return; }
+
+let texType, texInternal, linearOK;
+if (isGL2) {
+  gl.getExtension('EXT_color_buffer_float');
+  gl.getExtension('EXT_color_buffer_half_float');
+  texType = gl.HALF_FLOAT;
+  texInternal = gl.RGBA16F;
+  linearOK = true;
+} else {
+  const hf = gl.getExtension('OES_texture_half_float');
+  if (!hf) { fail(); return; }
+  gl.getExtension('EXT_color_buffer_half_float');
+  texType = hf.HALF_FLOAT_OES;
+  texInternal = gl.RGBA;
+  linearOK = !!gl.getExtension('OES_texture_half_float_linear');
+}
+
+/* ------------------------------------------------------------------ */
+/*  Shader                                                             */
+/* ------------------------------------------------------------------ */
+const VERT = `
+precision highp float;
+attribute vec2 aPosition;
+uniform vec2 texelSize;
+varying vec2 vUv;
+varying vec2 vL;
+varying vec2 vR;
+varying vec2 vT;
+varying vec2 vB;
+void main () {
+  vUv = aPosition * 0.5 + 0.5;
+  vL = vUv - vec2(texelSize.x, 0.0);
+  vR = vUv + vec2(texelSize.x, 0.0);
+  vT = vUv + vec2(0.0, texelSize.y);
+  vB = vUv - vec2(0.0, texelSize.y);
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}`;
+
+const FRAG_HEAD = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+precision highp sampler2D;
+#else
+precision mediump float;
+precision mediump sampler2D;
+#endif
+varying vec2 vUv;
+varying vec2 vL;
+varying vec2 vR;
+varying vec2 vT;
+varying vec2 vB;
+`;
+
+const FRAG_COPY = `
+uniform sampler2D uTex;
+uniform float uScale;
+void main () {
+  gl_FragColor = uScale * texture2D(uTex, vUv);
+}`;
+
+// Startbilder: Werte sind Absorptionen (0 = klares Wasser)
+const FRAG_INIT = `
+uniform float uMode;
+uniform float uAspect;
+uniform vec3 uA;
+uniform vec3 uB;
+uniform vec3 uC;
+float disc (vec2 c, float r) {
+  vec2 p = (vUv - c) * vec2(uAspect, 1.0);
+  return 1.0 - smoothstep(r * 0.9, r, length(p));
+}
+void main () {
+  vec3 d = vec3(0.0);
+  if (uMode < 0.5) {
+    d = mix(uA, uB, smoothstep(0.497, 0.503, vUv.x));
+  } else if (uMode < 1.5) {
+    d = mix(uC, uB, smoothstep(0.330, 0.336, vUv.y));
+    d = mix(d, uA, smoothstep(0.664, 0.670, vUv.y));
+  } else if (uMode < 2.5) {
+    d = mix(d, uA, disc(vec2(0.25, 0.62), 0.17));
+    d = mix(d, uB, disc(vec2(0.50, 0.36), 0.17));
+    d = mix(d, uC, disc(vec2(0.75, 0.62), 0.17));
+  }
+  gl_FragColor = vec4(d, 1.0);
+}`;
+
+// Pinselstrich als "Kapsel" zwischen zwei Punkten: mischt den Zielwert ein
+const FRAG_SPLAT = `
+uniform sampler2D uTarget;
+uniform vec2 uA;
+uniform vec2 uB;
+uniform float uAspect;
+uniform float uRadius;
+uniform float uHard;
+uniform float uStrength;
+uniform vec3 uValue;
+void main () {
+  vec2 asp = vec2(uAspect, 1.0);
+  vec2 pa = (vUv - uA) * asp;
+  vec2 ba = (uB - uA) * asp;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.0000001), 0.0, 1.0);
+  float d = length(pa - ba * h) / uRadius;
+  float g = mix(exp(-d * d), 1.0 - smoothstep(0.7, 1.0, d), uHard);
+  vec3 base = texture2D(uTarget, vUv).xyz;
+  gl_FragColor = vec4(mix(base, uValue, clamp(g * uStrength, 0.0, 1.0)), 1.0);
+}`;
+
+const FRAG_ADVECT = `
+uniform sampler2D uVelocity;
+uniform sampler2D uSource;
+uniform vec2 uVelTexel;
+uniform vec2 uSrcTexel;
+uniform float uDt;
+uniform float uDissipation;
+vec4 bilerp (sampler2D s, vec2 uv, vec2 ts) {
+  vec2 st = uv / ts - 0.5;
+  vec2 i = floor(st);
+  vec2 f = fract(st);
+  vec4 a = texture2D(s, (i + vec2(0.5, 0.5)) * ts);
+  vec4 b = texture2D(s, (i + vec2(1.5, 0.5)) * ts);
+  vec4 c = texture2D(s, (i + vec2(0.5, 1.5)) * ts);
+  vec4 d = texture2D(s, (i + vec2(1.5, 1.5)) * ts);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+void main () {
+#ifdef MANUAL_FILTERING
+  vec2 coord = vUv - uDt * bilerp(uVelocity, vUv, uVelTexel).xy * uVelTexel;
+  vec4 r = bilerp(uSource, coord, uSrcTexel);
+#else
+  vec2 coord = vUv - uDt * texture2D(uVelocity, vUv).xy * uVelTexel;
+  vec4 r = texture2D(uSource, coord);
+#endif
+  gl_FragColor = r / (1.0 + uDissipation * uDt);
+}`;
+
+const FRAG_DIVERGENCE = `
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture2D(uVelocity, vL).x;
+  float R = texture2D(uVelocity, vR).x;
+  float T = texture2D(uVelocity, vT).y;
+  float B = texture2D(uVelocity, vB).y;
+  vec2 C = texture2D(uVelocity, vUv).xy;
+  if (vL.x < 0.0) { L = -C.x; }
+  if (vR.x > 1.0) { R = -C.x; }
+  if (vT.y > 1.0) { T = -C.y; }
+  if (vB.y < 0.0) { B = -C.y; }
+  gl_FragColor = vec4(0.5 * (R - L + T - B), 0.0, 0.0, 1.0);
+}`;
+
+const FRAG_CURL = `
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture2D(uVelocity, vL).y;
+  float R = texture2D(uVelocity, vR).y;
+  float T = texture2D(uVelocity, vT).x;
+  float B = texture2D(uVelocity, vB).x;
+  gl_FragColor = vec4(0.5 * ((R - L) - (T - B)), 0.0, 0.0, 1.0);
+}`;
+
+const FRAG_VORTICITY = `
+uniform sampler2D uVelocity;
+uniform sampler2D uCurl;
+uniform float uCurlStrength;
+uniform float uDt;
+void main () {
+  float L = abs(texture2D(uCurl, vL).x);
+  float R = abs(texture2D(uCurl, vR).x);
+  float T = abs(texture2D(uCurl, vT).x);
+  float B = abs(texture2D(uCurl, vB).x);
+  float C = texture2D(uCurl, vUv).x;
+  vec2 g = 0.5 * vec2(R - L, T - B);
+  g /= length(g) + 0.0001;
+  vec2 force = uCurlStrength * C * vec2(g.y, -g.x);
+  vec2 v = texture2D(uVelocity, vUv).xy + force * uDt;
+  gl_FragColor = vec4(v, 0.0, 1.0);
+}`;
+
+const FRAG_PRESSURE = `
+uniform sampler2D uPressure;
+uniform sampler2D uDivergence;
+void main () {
+  float L = texture2D(uPressure, vL).x;
+  float R = texture2D(uPressure, vR).x;
+  float T = texture2D(uPressure, vT).x;
+  float B = texture2D(uPressure, vB).x;
+  float div = texture2D(uDivergence, vUv).x;
+  gl_FragColor = vec4((L + R + B + T - div) * 0.25, 0.0, 0.0, 1.0);
+}`;
+
+const FRAG_GRADIENT = `
+uniform sampler2D uPressure;
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture2D(uPressure, vL).x;
+  float R = texture2D(uPressure, vR).x;
+  float T = texture2D(uPressure, vT).x;
+  float B = texture2D(uPressure, vB).x;
+  vec2 v = texture2D(uVelocity, vUv).xy - 0.5 * vec2(R - L, T - B);
+  if (vL.x < 0.0 || vR.x > 1.0) { v.x = 0.0; }
+  if (vB.y < 0.0 || vT.y > 1.0) { v.y = 0.0; }
+  gl_FragColor = vec4(v, 0.0, 1.0);
+}`;
+
+// Kamera: ein grobes Bewegungsfeld (Textur) schiebt die Strömung bzw. färbt ein
+const FRAG_FIELD = `
+uniform sampler2D uTarget;
+uniform sampler2D uFlow;
+uniform sampler2D uPalette;
+uniform vec2 uVelScale;
+uniform vec3 uColor;
+uniform float uRandom;
+uniform float uDyeMode;
+uniform float uBias;
+uniform float uGain;
+void main () {
+  vec4 f = texture2D(uFlow, vUv);
+  vec3 base = texture2D(uTarget, vUv).xyz;
+  vec2 v = (f.xy * 255.0 - 128.0) / 127.0 * uVelScale;
+  // Zufallsfarben: grobes Farbraster (als RGB) -> Absorption
+  vec3 rnd = -log(max(texture2D(uPalette, vUv).rgb, vec3(0.03)));
+  vec3 dyeColor = mix(uColor, rnd, uRandom);
+  vec3 target = mix(vec3(v, 0.0), dyeColor, uDyeMode);
+  float s = clamp((mix(f.a, f.b, uDyeMode) - uBias) * uGain, 0.0, 1.0);
+  gl_FragColor = vec4(mix(base, target, s), 1.0);
+}`;
+
+// Umrisse: Kanten des Kamerabilds (Sobel) in eine Ebene zeichnen, die mit der
+// Strömung wandert, verläuft und verblasst – oder direkt in die Flüssigkeit mischen
+const FRAG_OUTLINE = `
+uniform sampler2D uLayer;
+uniform sampler2D uVelocity;
+uniform sampler2D uVideo;
+uniform vec2 uVelTexel;
+uniform vec2 uLayerTexel;
+uniform vec2 uVideoStep;
+uniform float uDt;
+uniform float uDecay;
+uniform float uBlur;
+uniform float uThreshold;
+uniform float uHue;
+uniform float uMixMode;
+uniform float uRate;
+uniform vec3 uColor;
+float lum (vec2 p) {
+  return dot(texture2D(uVideo, p).rgb, vec3(0.299, 0.587, 0.114));
+}
+void main () {
+  vec2 coord = vUv - uDt * texture2D(uVelocity, vUv).xy * uVelTexel;
+  vec3 c = texture2D(uLayer, coord).rgb;
+  vec2 o = uLayerTexel * 2.0;
+  vec3 n = 0.25 * (texture2D(uLayer, coord + vec2(o.x, 0.0)).rgb + texture2D(uLayer, coord - vec2(o.x, 0.0)).rgb +
+                   texture2D(uLayer, coord + vec2(0.0, o.y)).rgb + texture2D(uLayer, coord - vec2(0.0, o.y)).rgb);
+  c = mix(c, n, uBlur) * uDecay;
+
+  vec2 p = vec2(1.0 - vUv.x, 1.0 - vUv.y);      // gespiegelt, Bildzeilen von oben
+  vec2 d = uVideoStep;
+  float tl = lum(p + vec2(-d.x, -d.y));
+  float tc = lum(p + vec2(0.0, -d.y));
+  float tr = lum(p + vec2(d.x, -d.y));
+  float ml = lum(p + vec2(-d.x, 0.0));
+  float mr = lum(p + vec2(d.x, 0.0));
+  float bl = lum(p + vec2(-d.x, d.y));
+  float bc = lum(p + vec2(0.0, d.y));
+  float br = lum(p + vec2(d.x, d.y));
+  float gx = (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl);
+  float gy = (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr);
+  float e = smoothstep(uThreshold, uThreshold * 1.8, length(vec2(gx, gy)));
+
+  vec3 hue = 0.5 + 0.5 * cos(atan(gy, gx + 0.00001) * 2.0 + vec3(0.0, 2.094, 4.189));
+  vec3 ecol = mix(uColor, hue, uHue);
+  vec3 asLayer = max(c, ecol * e);
+  vec3 asDye = mix(c, ecol, e * uRate);
+  gl_FragColor = vec4(mix(asLayer, asDye, uMixMode), 1.0);
+}`;
+
+// Anzeige: subtraktive Farbmischung (Lambert-Beer): Farbe = Weiß * exp(-Absorption)
+const FRAG_DISPLAY = `
+uniform sampler2D uDye;
+uniform sampler2D uInk;
+uniform float uInkDark;
+uniform float uInkGlow;
+void main () {
+  vec3 ink = texture2D(uInk, vUv).rgb;
+  vec3 a = texture2D(uDye, vUv).rgb + ink * vec3(2.6, 2.4, 2.0) * uInkDark;
+  vec3 w = vec3(0.3333);
+  float hL = dot(texture2D(uDye, vL).rgb, w);
+  float hR = dot(texture2D(uDye, vR).rgb, w);
+  float hT = dot(texture2D(uDye, vT).rgb, w);
+  float hB = dot(texture2D(uDye, vB).rgb, w);
+  float shade = 1.0 + clamp(0.5 * ((hR - hL) - (hT - hB)), -0.10, 0.10);
+  vec3 col = vec3(0.965, 0.975, 0.985) * exp(-a) * shade;
+  vec2 q = vUv - 0.5;
+  col *= 1.0 - 0.30 * dot(q, q);
+  float glow = max(ink.r, max(ink.g, ink.b)) * uInkGlow;
+  col = col * (1.0 - 0.55 * glow) + ink * uInkGlow;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(s) || 'Shader-Fehler');
+  }
+  return s;
+}
+
+let vertShader;
+function makeProgram(frag, defines) {
+  const p = gl.createProgram();
+  gl.attachShader(p, vertShader);
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, (defines || '') + FRAG_HEAD + frag));
+  gl.bindAttribLocation(p, 0, 'aPosition');
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(p) || 'Link-Fehler');
+  }
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(p, i).name;
+    u[name] = gl.getUniformLocation(p, name);
+  }
+  return { p, u };
+}
+
+let P;
+try {
+  vertShader = compile(gl.VERTEX_SHADER, VERT);
+  P = {
+    copy: makeProgram(FRAG_COPY),
+    init: makeProgram(FRAG_INIT),
+    splat: makeProgram(FRAG_SPLAT),
+    advect: makeProgram(FRAG_ADVECT, linearOK ? '' : '#define MANUAL_FILTERING\n'),
+    divergence: makeProgram(FRAG_DIVERGENCE),
+    curl: makeProgram(FRAG_CURL),
+    vorticity: makeProgram(FRAG_VORTICITY),
+    pressure: makeProgram(FRAG_PRESSURE),
+    gradient: makeProgram(FRAG_GRADIENT),
+    field: makeProgram(FRAG_FIELD),
+    outline: makeProgram(FRAG_OUTLINE),
+    display: makeProgram(FRAG_DISPLAY)
+  };
+} catch (err) {
+  console.error(err);
+  fail();
+  return;
+}
+
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
+gl.disable(gl.BLEND);
+
+/* ------------------------------------------------------------------ */
+/*  Framebuffer                                                        */
+/* ------------------------------------------------------------------ */
+function createFBO(w, h, filter) {
+  gl.activeTexture(gl.TEXTURE0);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, texInternal, w, h, 0, gl.RGBA, texType, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo, w, h, ok };
+}
+
+function createDouble(w, h, filter) {
+  return {
+    read: createFBO(w, h, filter),
+    write: createFBO(w, h, filter),
+    swap() { const t = this.read; this.read = this.write; this.write = t; }
+  };
+}
+
+function destroyFBO(f) {
+  gl.deleteTexture(f.tex);
+  gl.deleteFramebuffer(f.fbo);
+}
+
+function bind(unit, f) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, f.tex);
+  return unit;
+}
+
+function draw(target) {
+  if (target) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, target.w, target.h);
+  } else {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  }
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function resizedCopy(old, w, h, filter) {
+  const n = createFBO(w, h, filter);
+  gl.useProgram(P.copy.p);
+  gl.uniform1i(P.copy.u.uTex, bind(0, old));
+  gl.uniform1f(P.copy.u.uScale, 1);
+  draw(n);
+  destroyFBO(old);
+  return n;
+}
+
+// Test: lässt sich in Half-Float-Texturen rendern?
+{
+  const t = createFBO(4, 4, gl.NEAREST);
+  const ok = t.ok;
+  destroyFBO(t);
+  if (!ok) { fail(); return; }
+}
+
+const SIM_BASE = 208;
+const DYE_BASE = 768;
+const PRESSURE_ITERATIONS = 40;
+
+let velocity = null, dye = null, pressure = null, divergence = null, curl = null;
+
+function gridSize(base) {
+  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  const lo = Math.max(16, Math.min(base, Math.min(w, h)));
+  const hi = Math.max(16, Math.round(lo * Math.max(w, h) / Math.max(1, Math.min(w, h))));
+  return w >= h ? { w: hi, h: lo } : { w: lo, h: hi };
+}
+
+function initFramebuffers() {
+  const sim = gridSize(SIM_BASE);
+  const dy = gridSize(DYE_BASE);
+  const filter = linearOK ? gl.LINEAR : gl.NEAREST;
+
+  if (!velocity) {
+    velocity = createDouble(sim.w, sim.h, filter);
+    dye = createDouble(dy.w, dy.h, filter);
+  } else {
+    if (velocity.read.w !== sim.w || velocity.read.h !== sim.h) {
+      velocity.read = resizedCopy(velocity.read, sim.w, sim.h, filter);
+      destroyFBO(velocity.write);
+      velocity.write = createFBO(sim.w, sim.h, filter);
+    }
+    if (dye.read.w !== dy.w || dye.read.h !== dy.h) {
+      dye.read = resizedCopy(dye.read, dy.w, dy.h, filter);
+      destroyFBO(dye.write);
+      dye.write = createFBO(dy.w, dy.h, filter);
+    }
+  }
+  if (!pressure || pressure.read.w !== sim.w || pressure.read.h !== sim.h) {
+    if (pressure) { destroyFBO(pressure.read); destroyFBO(pressure.write); destroyFBO(divergence); destroyFBO(curl); }
+    pressure = createDouble(sim.w, sim.h, gl.NEAREST);
+    divergence = createFBO(sim.w, sim.h, gl.NEAREST);
+    curl = createFBO(sim.w, sim.h, gl.NEAREST);
+  }
+}
+
+function resizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(2, Math.floor(canvas.clientWidth * dpr));
+  const h = Math.max(2, Math.floor(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    return true;
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Zustand & Bedienung                                                */
+/* ------------------------------------------------------------------ */
+const state = {
+  colors: ['#0a8cf2', '#ffe01a', '#f0197d'],   // Flüssigkeit A, B, C
+  active: 0,                                   // 0..2 = Farbe, 3 = Wasser
+  tool: 'pour',                                // 'pour' | 'stir'
+  mouse: true,                                 // Modus "Maus" an/aus
+  brush: 0.05,                                 // Radius als Anteil der Höhe
+  damping: 0.35,
+  curl: 14,
+  auto: false,
+  paused: false,
+  intro: 2.6                                   // Sekunden automatisches Anrühren beim Start
+};
+
+// Farbe -> Absorption je RGB-Kanal, sodass exp(-a) wieder die Farbe ergibt
+function absorbance(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => -Math.log(Math.max(v / 255, 0.03)));
+}
+function activeAbsorbance() {
+  return state.active === 3 ? [0, 0, 0] : absorbance(state.colors[state.active]);
+}
+function aspect() {
+  return gl.drawingBufferWidth / Math.max(1, gl.drawingBufferHeight);
+}
+
+function applyPreset(mode) {
+  gl.useProgram(P.init.p);
+  gl.uniform1f(P.init.u.uMode, mode);
+  gl.uniform1f(P.init.u.uAspect, aspect());
+  gl.uniform3fv(P.init.u.uA, absorbance(state.colors[0]));
+  gl.uniform3fv(P.init.u.uB, absorbance(state.colors[1]));
+  gl.uniform3fv(P.init.u.uC, absorbance(state.colors[2]));
+  draw(dye.read);
+
+  // Bewegung und Druck zurücksetzen
+  gl.useProgram(P.copy.p);
+  gl.uniform1f(P.copy.u.uScale, 0);
+  gl.uniform1i(P.copy.u.uTex, bind(0, velocity.read));
+  draw(velocity.write); velocity.swap();
+  gl.uniform1i(P.copy.u.uTex, bind(0, pressure.read));
+  draw(pressure.write); pressure.swap();
+}
+
+function splat(target, ax, ay, bx, by, radius, value, hard, strength) {
+  gl.useProgram(P.splat.p);
+  gl.uniform1i(P.splat.u.uTarget, bind(0, target.read));
+  gl.uniform2f(P.splat.u.uA, ax, ay);
+  gl.uniform2f(P.splat.u.uB, bx, by);
+  gl.uniform1f(P.splat.u.uAspect, aspect());
+  gl.uniform1f(P.splat.u.uRadius, radius);
+  gl.uniform1f(P.splat.u.uHard, hard);
+  gl.uniform1f(P.splat.u.uStrength, strength);
+  gl.uniform3f(P.splat.u.uValue, value[0], value[1], value[2]);
+  draw(target.write);
+  target.swap();
+}
+
+// Ein Strich von (px,py) nach (x,y): setzt die Strömung, optional Farbe
+function stroke(px, py, x, y, dt, radius, pour, color) {
+  const dx = x - px, dy = y - py;
+  if (Math.abs(dx) + Math.abs(dy) > 1e-5) {
+    const vx = dx * velocity.read.w / dt;
+    const vy = dy * velocity.read.h / dt;
+    splat(velocity, px, py, x, y, radius, [vx, vy, 0], 0, 1);
+  }
+  if (pour) splat(dye, px, py, x, y, radius, color, 1, 1);
+}
+
+const pointers = new Map();
+let autoT = 0, autoPrev = null;
+
+function autoPos(t) {
+  return [0.5 + 0.30 * Math.cos(1.9 * t), 0.5 + 0.28 * Math.sin(2.7 * t)];
+}
+
+function applyInputs(dt) {
+  for (const [id, p] of pointers) {
+    stroke(p.px, p.py, p.x, p.y, dt, state.brush, !p.stir, p.color);
+    p.px = p.x; p.py = p.y;
+    if (p.up) pointers.delete(id);
+  }
+
+  const autoActive = !state.paused && (state.auto || state.intro > 0);
+  if (autoActive) {
+    if (state.intro > 0) state.intro -= dt;
+    autoT += dt;
+    const pos = autoPos(autoT);
+    if (autoPrev) stroke(autoPrev[0], autoPrev[1], pos[0], pos[1], dt, 0.06, false, null);
+    autoPrev = pos;
+  } else {
+    autoPrev = null;
+  }
+
+  audioReact(dt);
+  camReact();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Audio: Quelle wählen, Spektrum auswerten, Flüssigkeit antreiben    */
+/* ------------------------------------------------------------------ */
+const BANDS = 8;
+const audio = {
+  ctx: null, analyser: null, bins: null,
+  stream: null, streamNode: null,          // Mikrofon oder System-/Tab-Ton
+  el: null, elNode: null, url: null, file: null,   // Audiodatei
+  on: false,                               // Modus "Audio" an/aus
+  kind: 'off',                             // 'off' | 'mic' | 'system' | 'file'
+  choice: 'mic:',                          // gewählte Quelle (Wert der Auswahlliste)
+  sens: 1, color: true,
+  avg: new Float32Array(BANDS), t: 0, token: 0, run: 0
+};
+const audioSel = document.getElementById('audioSrc');
+const audioStatus = document.getElementById('audioStatus');
+const audioBox = document.getElementById('audioBox');
+const modeAudio = document.getElementById('modeAudio');
+const micGroup = document.getElementById('micGroup');
+const otherGroup = document.getElementById('otherGroup');
+const fileInput = document.getElementById('audioFile');
+const meterBars = Array.from(document.querySelectorAll('#meter i'));
+
+function setStatus(text, isError) {
+  audioStatus.textContent = text || '';
+  audioStatus.classList.toggle('err', !!isError);
+}
+
+function ensureAudio() {
+  if (!audio.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) throw new Error('Dieser Browser unterstützt kein Web Audio.');
+    audio.ctx = new AC();
+    audio.analyser = audio.ctx.createAnalyser();
+    audio.analyser.fftSize = 2048;
+    audio.analyser.smoothingTimeConstant = 0.55;
+    audio.bins = new Uint8Array(audio.analyser.frequencyBinCount);
+    // stumm an den Ausgang hängen, damit der Analyser sicher verarbeitet wird
+    const mute = audio.ctx.createGain();
+    mute.gain.value = 0;
+    audio.analyser.connect(mute);
+    mute.connect(audio.ctx.destination);
+  }
+  if (audio.ctx.state === 'suspended') audio.ctx.resume();
+}
+
+function stopAudio() {
+  audio.token++;
+  if (audio.streamNode) { audio.streamNode.disconnect(); audio.streamNode = null; }
+  if (audio.stream) {
+    audio.stream.getTracks().forEach(t => { t.onended = null; t.stop(); });
+    audio.stream = null;
+  }
+  if (audio.el) audio.el.pause();
+  audio.kind = 'off';
+  audio.avg.fill(0);
+  meterBars.forEach(b => { b.style.height = '2px'; });
+}
+
+function setAudioOn(on) {
+  audio.on = on;
+  modeAudio.setAttribute('aria-pressed', String(on));
+  audioBox.hidden = !on;
+}
+
+function audioOff(message, isError) {
+  audio.run++;
+  stopAudio();
+  setAudioOn(false);
+  setStatus(message || '', isError);
+}
+
+// Startet die in der Liste gewählte Quelle
+async function startAudioChoice() {
+  const run = ++audio.run;
+  const v = audio.choice;
+  setAudioOn(true);
+  try {
+    if (v === 'system') await startSystem();
+    else if (v === 'fileloaded' && audio.file) startFile(audio.file);
+    else await startMic(v.indexOf('mic:') === 0 ? v.slice(4) : '');
+  } catch (err) {
+    if (run === audio.run) audioFail(mediaErrorText(err));
+  }
+}
+
+// Quelle ließ sich nicht starten: Auswahl offen lassen, damit eine andere gewählt werden kann
+function audioFail(message) {
+  stopAudio();
+  setStatus(message, true);
+}
+
+function useStream(stream, kind) {
+  audio.stream = stream;
+  audio.streamNode = audio.ctx.createMediaStreamSource(stream);
+  audio.streamNode.connect(audio.analyser);   // nicht hörbar machen (sonst Rückkopplung)
+  audio.kind = kind;
+  stream.getAudioTracks()[0].onended = () => {
+    if (audio.stream === stream) audioOff('Die Audioquelle wurde beendet.');
+  };
+}
+
+// Liste der Eingänge füllen (Namen sind erst nach erteilter Erlaubnis sichtbar)
+async function listDevices(selectId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  let inputs = [];
+  try {
+    inputs = (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === 'audioinput' && d.label);
+  } catch (_) { return; }
+  if (!inputs.length) return;
+  micGroup.textContent = '';
+  for (const d of inputs) {
+    const o = document.createElement('option');
+    o.value = 'mic:' + d.deviceId;
+    o.textContent = d.label;
+    micGroup.appendChild(o);
+  }
+  if (selectId !== undefined) {
+    const want = 'mic:' + selectId;
+    const has = Array.from(micGroup.children).some(o => o.value === want);
+    audio.choice = has ? want : micGroup.children[0].value;
+  }
+  audioSel.value = audio.choice;
+  if (audioSel.value !== audio.choice) {       // Eintrag gibt es nicht (mehr)
+    audio.choice = micGroup.children[0].value;
+    audioSel.value = audio.choice;
+  }
+}
+
+async function startMic(deviceId) {
+  stopAudio();
+  const token = audio.token;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('Mikrofonzugriff ist in diesem Browser hier nicht möglich (Safari sperrt ihn bei lokal geöffneten Dateien). „Audiodatei öffnen …“ funktioniert trotzdem.');
+  }
+  ensureAudio();
+  setStatus('Warte auf die Freigabe des Mikrofons …');
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false
+    },
+    video: false
+  });
+  if (token !== audio.token) { stream.getTracks().forEach(t => t.stop()); return; }
+  useStream(stream, 'mic');
+  const track = stream.getAudioTracks()[0];
+  const settings = track.getSettings ? track.getSettings() : {};
+  audio.choice = 'mic:' + (deviceId || '');
+  await listDevices(settings.deviceId || deviceId || '');
+  setStatus('Eingang aktiv: ' + (track.label || 'Mikrofon'));
+}
+
+async function startSystem() {
+  stopAudio();
+  const token = audio.token;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    throw new Error('Dieser Browser kann System- oder Tab-Ton nicht aufnehmen.');
+  }
+  ensureAudio();
+  setStatus('Im Freigabe-Dialog einen Tab oder den ganzen Bildschirm wählen und dort „Audio freigeben“ einschalten.');
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  if (token !== audio.token) { stream.getTracks().forEach(t => t.stop()); return; }
+  if (!stream.getAudioTracks().length) {
+    stream.getTracks().forEach(t => t.stop());
+    audioFail('Es wurde kein Ton freigegeben. Bitte die Quelle erneut wählen und im Dialog „Audio freigeben“ einschalten (bei Fenstern nicht möglich – Tab oder ganzen Bildschirm nehmen; Safari gibt keinen Ton frei).');
+    return;
+  }
+  useStream(stream, 'system');
+  setStatus('System-/Tab-Ton aktiv.');
+}
+
+function startFile(file) {
+  stopAudio();
+  ensureAudio();
+  if (!audio.el) {
+    audio.el = new Audio();
+    audio.el.loop = true;
+    audio.elNode = audio.ctx.createMediaElementSource(audio.el);
+    audio.elNode.connect(audio.analyser);
+    audio.elNode.connect(audio.ctx.destination);   // Datei soll hörbar sein
+    audio.el.addEventListener('error', () => {
+      if (audio.kind === 'file') audioOff('Diese Datei kann nicht abgespielt werden.', true);
+    });
+  }
+  if (audio.file !== file) {
+    if (audio.url) URL.revokeObjectURL(audio.url);
+    audio.url = URL.createObjectURL(file);
+    audio.file = file;
+    audio.el.src = audio.url;
+  }
+  let opt = document.getElementById('fileOpt');
+  if (!opt) {
+    opt = document.createElement('option');
+    opt.id = 'fileOpt';
+    opt.value = 'fileloaded';
+    otherGroup.insertBefore(opt, otherGroup.lastElementChild);
+  }
+  opt.textContent = 'Datei: ' + file.name;
+  audio.kind = 'file';
+  audio.choice = 'fileloaded';
+  audioSel.value = 'fileloaded';
+  setAudioOn(true);
+  setStatus('Spielt: ' + file.name);
+  const token = audio.token;
+  audio.el.play().catch(() => {
+    if (token === audio.token) setStatus('Wiedergabe wurde blockiert – Quelle bitte erneut auswählen.', true);
+  });
+}
+
+function mediaErrorText(err) {
+  switch (err && err.name) {
+    case 'NotAllowedError':
+    case 'SecurityError': return 'Der Zugriff wurde nicht erlaubt oder abgebrochen.';
+    case 'NotFoundError':
+    case 'OverconstrainedError': return 'Es wurde kein passendes Gerät gefunden.';
+    case 'NotReadableError':
+    case 'AbortError': return 'Das Gerät ist belegt oder nicht lesbar.';
+    default: return (err && err.message) || 'Die Quelle konnte nicht gestartet werden.';
+  }
+}
+
+modeAudio.addEventListener('click', () => {
+  if (audio.on) audioOff();
+  else startAudioChoice();
+});
+
+audioSel.addEventListener('change', () => {
+  const v = audioSel.value;
+  if (v === 'file') {
+    // Auswahl zurückstellen, damit „Audiodatei öffnen …“ erneut wählbar bleibt
+    audioSel.value = audio.choice;
+    try { ensureAudio(); } catch (err) { audioOff(mediaErrorText(err), true); return; }
+    fileInput.value = '';
+    fileInput.click();
+    return;
+  }
+  audio.choice = v;
+  startAudioChoice();
+});
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  audio.run++;
+  try {
+    startFile(file);
+  } catch (err) {
+    audioOff(mediaErrorText(err), true);
+  }
+});
+
+if (navigator.mediaDevices) {
+  listDevices();
+  if (navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', () => listDevices());
+  }
+}
+
+document.getElementById('sens').addEventListener('input', e => { audio.sens = parseFloat(e.target.value); });
+document.getElementById('audioColor').addEventListener('click', e => {
+  audio.color = !audio.color;
+  e.currentTarget.setAttribute('aria-pressed', String(audio.color));
+});
+
+// Acht Frequenzbänder (40 Hz – 12 kHz) treiben acht Düsen am Boden an
+function audioReact(dt) {
+  if (audio.kind === 'off' || !audio.analyser) return;
+  const an = audio.analyser;
+  an.getByteFrequencyData(audio.bins);
+  const binHz = audio.ctx.sampleRate / an.fftSize;
+  const simH = velocity.read.h;
+  let liquids = null;
+  audio.t += dt;
+
+  for (let i = 0; i < BANDS; i++) {
+    const f0 = 40 * Math.pow(300, i / BANDS);
+    const f1 = 40 * Math.pow(300, (i + 1) / BANDS);
+    const lo = Math.max(1, Math.floor(f0 / binHz));
+    const hi = Math.min(audio.bins.length, Math.max(lo + 1, Math.ceil(f1 / binHz)));
+    let sum = 0;
+    for (let k = lo; k < hi; k++) sum += audio.bins[k];
+    const mean = sum / Math.max(1, hi - lo) / 255;
+
+    // Pegel über dem Grundrauschen, Höhen etwas angehoben; Anschläge zählen stärker
+    const lvl = Math.max(0, (mean - (0.40 - 0.025 * i)) / 0.5) * audio.sens;
+    const flux = Math.max(0, lvl - audio.avg[i]);
+    audio.avg[i] += (lvl - audio.avg[i]) * Math.min(1, dt * 4);
+    const e = Math.min(1.2, lvl * 0.45 + flux * 2.2);
+
+    meterBars[i].style.height = Math.max(2, Math.min(1, e) * 28) + 'px';
+    if (state.paused || e < 0.06) continue;
+
+    const x = (i + 0.5) / BANDS;
+    const vy = e * 1.5 * simH;
+    const vx = Math.sin(audio.t * 0.8 + i * 1.9) * 0.35 * vy;
+    splat(velocity, x, 0, x, 0.08, 0.035, [vx, vy, 0], 0, Math.min(1, e * 1.4));
+
+    if (audio.color && e > 0.3) {
+      if (!liquids) liquids = state.colors.map(absorbance);
+      splat(dye, x, 0, x, 0.015 + 0.04 * e, 0.012 + 0.016 * e, liquids[i % 3], 1, Math.min(1, e * 0.6));
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Kamera: Bewegung erkennen (optischer Fluss) und Flüssigkeit schieben */
+/* ------------------------------------------------------------------ */
+const cam = {
+  motion: false,                           // Kamera-Modus "Bewegung" an/aus
+  outline: false,                          // Kamera-Modus "Umrisse" an/aus
+  outlineStyle: 'ink',                     // 'ink' | 'glow' | 'dye'
+  smear: 0.5, detail: 0.6,
+  layer: null, vidTex: null, vidReady: false,
+  starting: false, available: false,
+  stream: null, choice: '',                // gewählte Kamera ('' = Standard)
+  sens: 1, token: 0, notFound: false,
+  color: 'off',                            // Farbe bei Bewegung: 'off' | 'pick' | 'random'
+  palW: 6, palH: 4, pal: null, palNext: null, palTex: null,   // Raster mit Zufallsfarben
+  W: 64, H: 0, gw: 0, gh: 0,               // Analysebild und Bewegungsraster
+  canvas: null, ctx: null, tmp: null, prev: null, cur: null,
+  flow: null, tex: null,
+  hasPrev: false, lastTime: -1, lastStamp: 0, warmUntil: 0,
+  fresh: false,
+  useVFC: typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype
+};
+const CAM_MAX_FLOW = 3;                    // maximale Verschiebung in Analyse-Pixeln je Bild
+const camVideo = document.getElementById('camVideo');
+const camSel = document.getElementById('camSrc');
+const camBox = document.getElementById('camBox');
+const camStatus = document.getElementById('camStatus');
+const modeCam = document.getElementById('modeCam');
+const modeOutline = document.getElementById('modeOutline');
+const motionBox = document.getElementById('motionBox');
+const outlineBox = document.getElementById('outlineBox');
+const camModesLabel = document.getElementById('camModesLabel');
+
+function setCamStatus(text, isError) {
+  camStatus.textContent = text || '';
+  camStatus.classList.toggle('err', !!isError);
+}
+
+// Prüft, ob eine Kamera vorhanden ist, und füllt die Kameraliste
+async function checkCameras(selectId) {
+  let list = [], all = [];
+  const md = navigator.mediaDevices;
+  const supported = !!(md && md.enumerateDevices && md.getUserMedia);
+  if (supported) {
+    try { all = await md.enumerateDevices(); } catch (_) {}
+    list = all.filter(d => d.kind === 'videoinput');
+  }
+  // Manche Browser nennen vor der ersten Freigabe gar keine Geräte: dann einen Versuch zulassen
+  cam.available = supported && (list.length > 0 || (all.length === 0 && !cam.notFound));
+  const usable = cam.available || cam.motion || cam.outline;
+  modeCam.disabled = modeOutline.disabled = !usable;
+  camModesLabel.textContent = usable ? 'Kamera-Modi – an / aus'
+    : supported ? 'Kamera-Modi – keine Kamera gefunden'
+    : 'Kamera-Modi – hier gesperrt';
+  if (!supported && !camStatus.textContent) {
+    setCamStatus('Kamera und Mikrofon sind in diesem Browser für lokal geöffnete Dateien gesperrt (z. B. Safari). Mit Chrome, Edge oder Firefox öffnen – Audiodateien gehen trotzdem.');
+  }
+
+  const labeled = list.filter(d => d.label);
+  if (!labeled.length) return;
+  camSel.textContent = '';
+  for (const d of labeled) {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label;
+    camSel.appendChild(o);
+  }
+  if (selectId !== undefined && labeled.some(d => d.deviceId === selectId)) cam.choice = selectId;
+  camSel.value = cam.choice;
+  if (camSel.value !== cam.choice) {
+    cam.choice = camSel.options[0].value;
+    camSel.value = cam.choice;
+  }
+}
+
+function updateCamUI() {
+  modeCam.setAttribute('aria-pressed', String(cam.motion));
+  modeOutline.setAttribute('aria-pressed', String(cam.outline));
+  camBox.hidden = !(cam.motion || cam.outline);
+  motionBox.hidden = !cam.motion;
+  outlineBox.hidden = !cam.outline;
+}
+
+// Die Kamera läuft, solange mindestens einer der beiden Kamera-Modi an ist
+function syncCam() {
+  updateCamUI();
+  if (cam.motion || cam.outline) {
+    if (!cam.stream && !cam.starting) startCam();
+  } else {
+    stopCam();
+    setCamStatus('');
+    checkCameras();
+  }
+}
+
+function clearOutlineLayer() {
+  if (!cam.layer) return;
+  destroyFBO(cam.layer.read);
+  destroyFBO(cam.layer.write);
+  cam.layer = null;
+}
+
+function stopCam() {
+  cam.token++;
+  cam.starting = false;
+  cam.vidReady = false;
+  if (cam.stream) {
+    cam.stream.getTracks().forEach(t => { t.onended = null; t.stop(); });
+    cam.stream = null;
+  }
+  camVideo.srcObject = null;
+  cam.hasPrev = false;
+  cam.lastTime = -1;
+}
+
+function camOff(message, isError) {
+  cam.motion = false;
+  cam.outline = false;
+  stopCam();
+  updateCamUI();
+  setCamStatus(message || '', isError);
+  checkCameras();
+}
+
+async function startCam() {
+  stopCam();
+  const token = cam.token;
+  cam.starting = true;
+  updateCamUI();
+  setCamStatus('Warte auf die Freigabe der Kamera …');
+  try {
+    const id = cam.choice;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: id ? { exact: id } : undefined,
+        width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }
+      },
+      audio: false
+    });
+    if (token !== cam.token) { stream.getTracks().forEach(t => t.stop()); return; }
+    cam.stream = stream;
+    cam.starting = false;
+    const track = stream.getVideoTracks()[0];
+    track.onended = () => { if (cam.stream === stream) camOff('Die Kamera wurde getrennt.'); };
+    camVideo.srcObject = stream;
+    try { await camVideo.play(); } catch (_) {}
+    if (token !== cam.token) return;
+    if (cam.useVFC) {
+      const onFrame = () => {
+        if (cam.stream !== stream) return;
+        cam.fresh = true;
+        camVideo.requestVideoFrameCallback(onFrame);
+      };
+      camVideo.requestVideoFrameCallback(onFrame);
+    }
+    const settings = track.getSettings ? track.getSettings() : {};
+    await checkCameras(settings.deviceId || id);
+    setCamStatus('Kamera aktiv: ' + (track.label || 'Kamera'));
+  } catch (err) {
+    if (token !== cam.token) return;
+    if (err && err.name === 'NotFoundError') cam.notFound = true;
+    camOff(mediaErrorText(err), true);
+  }
+}
+
+modeCam.addEventListener('click', () => {
+  cam.motion = !cam.motion;
+  cam.hasPrev = false;
+  syncCam();
+});
+modeOutline.addEventListener('click', () => {
+  cam.outline = !cam.outline;
+  clearOutlineLayer();
+  syncCam();
+});
+const outlineButtons = Array.from(document.querySelectorAll('#outlineSeg button'));
+outlineButtons.forEach(btn => btn.addEventListener('click', () => {
+  cam.outlineStyle = btn.dataset.os;
+  clearOutlineLayer();
+  outlineButtons.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+}));
+document.getElementById('outSmear').addEventListener('input', e => { cam.smear = parseFloat(e.target.value); });
+document.getElementById('outDetail').addEventListener('input', e => { cam.detail = parseFloat(e.target.value); });
+camSel.addEventListener('change', () => {
+  cam.choice = camSel.value;
+  startCam();
+});
+document.getElementById('camSens').addEventListener('input', e => { cam.sens = parseFloat(e.target.value); });
+const camColorButtons = Array.from(document.querySelectorAll('#camColorSeg button'));
+camColorButtons.forEach(btn => btn.addEventListener('click', () => {
+  cam.color = btn.dataset.cc;
+  camColorButtons.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+}));
+
+// Zufallsfarben: jedes Feld eines groben Rasters würfelt in unregelmäßigen Abständen neu
+function updatePalette(now) {
+  const n = cam.palW * cam.palH;
+  if (!cam.pal) {
+    cam.pal = new Uint8Array(n * 4);
+    cam.palNext = new Float64Array(n);
+    cam.palTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, cam.palTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  let dirty = false;
+  for (let i = 0; i < n; i++) {
+    if (now < cam.palNext[i]) continue;
+    cam.palNext[i] = now + 500 + Math.random() * 1500;
+    // zufälliger, kräftiger Farbton (HSV -> RGB)
+    const h = Math.random() * 6, s = 0.85 + Math.random() * 0.15;
+    const f = h - Math.floor(h), p = 1 - s, q = 1 - s * f, t = 1 - s * (1 - f);
+    const rgb = [[1, t, p], [q, 1, p], [p, 1, t], [p, q, 1], [t, p, 1], [1, p, q]][Math.floor(h) % 6];
+    cam.pal[i * 4] = Math.round(rgb[0] * 255);
+    cam.pal[i * 4 + 1] = Math.round(rgb[1] * 255);
+    cam.pal[i * 4 + 2] = Math.round(rgb[2] * 255);
+    cam.pal[i * 4 + 3] = 255;
+    dirty = true;
+  }
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, cam.palTex);
+  if (dirty) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cam.palW, cam.palH, 0, gl.RGBA, gl.UNSIGNED_BYTE, cam.pal);
+  }
+}
+
+checkCameras();
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => { cam.notFound = false; checkCameras(); });
+}
+
+function camAllocate(W, H) {
+  cam.H = H;
+  cam.gw = W / 2;
+  cam.gh = H / 2;
+  if (!cam.canvas) cam.canvas = document.createElement('canvas');
+  cam.canvas.width = W;
+  cam.canvas.height = H;
+  cam.ctx = cam.canvas.getContext('2d', { willReadFrequently: true });
+  cam.tmp = new Float32Array(W * H);
+  cam.prev = new Float32Array(W * H);
+  cam.cur = new Float32Array(W * H);
+  cam.flow = new Uint8Array(cam.gw * cam.gh * 4);
+  cam.fu = new Float32Array(cam.gw * cam.gh);
+  cam.fw = new Float32Array(cam.gw * cam.gh);
+  cam.fp = new Float32Array(cam.gw * cam.gh);
+  cam.fm = new Float32Array(cam.gw * cam.gh);
+  cam.hasPrev = false;
+  if (!cam.tex) {
+    cam.tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, cam.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+}
+
+function camReact() {
+  if (!cam.stream || state.paused) return;
+  const v = camVideo;
+  if (v.readyState < 2 || !v.videoWidth) return;
+  if (cam.useVFC) {                                // nur bei wirklich neuem Kamerabild rechnen
+    if (!cam.fresh) return;
+    cam.fresh = false;
+  } else {
+    if (v.currentTime === cam.lastTime) return;
+    cam.lastTime = v.currentTime;
+  }
+  if (cam.outline) uploadVideoFrame(v);
+  if (cam.motion) camMotion(v);
+}
+
+// Aktuelles Kamerabild als Textur für die Umriss-Erkennung bereitstellen
+function uploadVideoFrame(v) {
+  gl.activeTexture(gl.TEXTURE3);
+  if (!cam.vidTex) {
+    cam.vidTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, cam.vidTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, cam.vidTex);
+  try {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v);
+    cam.vidReady = true;
+  } catch (_) {}
+}
+
+// Umrisse zeichnen und die Umriss-Ebene mit der Strömung verwischen lassen
+function outlineStep(dt) {
+  if (!cam.outline || !cam.vidReady) return;
+  const asDye = cam.outlineStyle === 'dye';
+  let target = dye;
+  if (!asDye) {
+    const w = dye.read.w, h = dye.read.h;
+    if (cam.layer && (cam.layer.read.w !== w || cam.layer.read.h !== h)) clearOutlineLayer();
+    if (!cam.layer) cam.layer = createDouble(w, h, linearOK ? gl.LINEAR : gl.NEAREST);
+    target = cam.layer;
+  }
+  const u = P.outline.u;
+  const col = asDye ? activeAbsorbance() : [1, 1, 1];
+  const fade = 0.15 + cam.smear * cam.smear * 6;       // Sekunden, bis eine Spur verblasst
+  gl.useProgram(P.outline.p);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, cam.vidTex);
+  gl.uniform1i(u.uVideo, 3);
+  gl.uniform1i(u.uLayer, bind(0, target.read));
+  gl.uniform1i(u.uVelocity, bind(1, velocity.read));
+  gl.uniform2f(u.uVelTexel, 1 / velocity.read.w, 1 / velocity.read.h);
+  gl.uniform2f(u.uLayerTexel, 1 / target.read.w, 1 / target.read.h);
+  gl.uniform2f(u.uVideoStep, 2 / camVideo.videoWidth, 2 / camVideo.videoHeight);
+  gl.uniform1f(u.uThreshold, 0.8 - 0.7 * cam.detail);
+  gl.uniform1f(u.uDt, asDye ? 0 : dt);                 // die Flüssigkeit wird schon selbst bewegt
+  gl.uniform1f(u.uDecay, asDye ? 1 : Math.exp(-dt / fade));
+  gl.uniform1f(u.uBlur, asDye ? 0 : 0.1 + 0.5 * cam.smear);
+  gl.uniform1f(u.uHue, cam.outlineStyle === 'glow' ? 1 : 0);
+  gl.uniform1f(u.uMixMode, asDye ? 1 : 0);
+  gl.uniform1f(u.uRate, Math.min(1, 5 * dt));
+  gl.uniform3f(u.uColor, col[0], col[1], col[2]);
+  draw(target.write);
+  target.swap();
+}
+
+// Bewegung im Kamerabild erkennen und die Flüssigkeit mitnehmen
+function camMotion(v) {
+  const W = cam.W;
+  const H = Math.max(8, Math.round(W * v.videoHeight / v.videoWidth / 2) * 2);
+  if (H !== cam.H) camAllocate(W, H);
+
+  // Kamerabild stark verkleinern, in Graustufen wandeln und glätten
+  cam.ctx.drawImage(v, 0, 0, W, H);
+  const px = cam.ctx.getImageData(0, 0, W, H).data;
+  const tmp = cam.tmp, cur = cam.cur, prev = cam.prev, N = W * H;
+  for (let k = 0; k < N; k++) {
+    tmp[k] = 0.299 * px[k * 4] + 0.587 * px[k * 4 + 1] + 0.114 * px[k * 4 + 2];
+  }
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const k = y * W + x;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) { cur[k] = tmp[k]; continue; }
+      cur[k] = (tmp[k - W - 1] + tmp[k - W] + tmp[k - W + 1] +
+                tmp[k - 1] + tmp[k] + tmp[k + 1] +
+                tmp[k + W - 1] + tmp[k + W] + tmp[k + W + 1]) / 9;
+    }
+  }
+
+  // Exakt gleiches Bild wie zuvor = kein neues Kamerabild (Kamera ist langsamer als der Bildschirm)
+  if (cam.hasPrev) {
+    let same = true;
+    for (let k = 0; k < N; k++) {
+      if (cur[k] !== prev[k]) { same = false; break; }
+    }
+    if (same) return;
+  }
+
+  const stamp = performance.now();
+  const camDt = Math.min(Math.max((stamp - cam.lastStamp) / 1000, 1 / 60), 0.2);
+  cam.lastStamp = stamp;
+  cam.prev = cur;
+  cam.cur = prev;
+  if (!cam.hasPrev) { cam.hasPrev = true; cam.warmUntil = stamp + 800; return; }
+  if (stamp < cam.warmUntil) return;       // Kamera regelt beim Start noch die Belichtung
+
+  // Helligkeitsschwankungen der Kamera (Belichtung) herausrechnen
+  let meanDiff = 0;
+  for (let k = 0; k < N; k++) meanDiff += cur[k] - prev[k];
+  meanDiff /= N;
+
+  // Optischer Fluss je Rasterzelle (Lucas-Kanade über ein 6x6-Fenster)
+  const gw = cam.gw, gh = cam.gh, flow = cam.flow;
+  const fu = cam.fu, fw = cam.fw, fp = cam.fp, fm = cam.fm;
+  for (let j = 0; j < gh; j++) {
+    const ys = Math.min(Math.max(j * 2 - 2, 1), H - 7);
+    for (let i = 0; i < gw; i++) {
+      const xs = Math.min(Math.max(i * 2 - 2, 1), W - 7);
+      let sxx = 0, sxy = 0, syy = 0, sxt = 0, syt = 0, sat = 0;
+      for (let y = ys; y < ys + 6; y++) {
+        for (let x = xs; x < xs + 6; x++) {
+          const k = y * W + x;
+          const ix = (cur[k + 1] - cur[k - 1] + prev[k + 1] - prev[k - 1]) * 0.25;
+          const iy = (cur[k + W] - cur[k - W] + prev[k + W] - prev[k - W]) * 0.25;
+          const it = cur[k] - prev[k] - meanDiff;
+          sxx += ix * ix; sxy += ix * iy; syy += iy * iy;
+          sxt += ix * it; syt += iy * it;
+          sat += Math.abs(it);
+        }
+      }
+      const a = sxx + 60, c = syy + 60;
+      const det = a * c - sxy * sxy;
+      let u = -(c * sxt - sxy * syt) / det;
+      let w = -(a * syt - sxy * sxt) / det;
+      const mag = Math.sqrt(u * u + w * w);
+      if (mag > CAM_MAX_FLOW) { u *= CAM_MAX_FLOW / mag; w *= CAM_MAX_FLOW / mag; }
+
+      const motion = Math.min(1, Math.max(0, (sat / 36 / 255 - 0.018) * 14 * cam.sens));
+      const push = motion * Math.min(1, mag / 0.25);
+      const g = j * gw + i;
+      fu[g] = u * push; fw[g] = w * push; fp[g] = push; fm[g] = motion;
+    }
+  }
+
+  // Ändert sich fast das ganze Bild auf einmal (Licht, Belichtung, Kamera-Wackler), ist das keine Bewegung
+  let active = 0;
+  for (let g = 0; g < gw * gh; g++) if (fm[g] > 0.3) active++;
+  if (active > 0.5 * gw * gh) return;
+
+  // Feld über 3x3 Zellen glätten (weniger Rauschen, ruhigere Strömung)
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      let su = 0, sw = 0, sp = 0, sm = 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        const jj = Math.min(Math.max(j + dj, 0), gh - 1);
+        for (let di = -1; di <= 1; di++) {
+          const g = jj * gw + Math.min(Math.max(i + di, 0), gw - 1);
+          su += fu[g]; sw += fw[g]; sp += fp[g]; sm += fm[g];
+        }
+      }
+      const uu = sp > 1e-4 ? su / sp : 0;
+      const ww = sp > 1e-4 ? sw / sp : 0;
+
+      // gespiegelt (wie ein Spiegel) und mit y nach oben ablegen
+      const o = ((gh - 1 - j) * gw + (gw - 1 - i)) * 4;
+      flow[o] = 128 + Math.round(-uu / CAM_MAX_FLOW * 127);
+      flow[o + 1] = 128 + Math.round(-ww / CAM_MAX_FLOW * 127);
+      flow[o + 2] = Math.round(sm / 9 * 255);
+      flow[o + 3] = Math.round(sp / 9 * 255);
+    }
+  }
+
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, cam.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gw, gh, 0, gl.RGBA, gl.UNSIGNED_BYTE, flow);
+
+  // Strömung in Bewegungsrichtung mitnehmen
+  // Analyse-Pixel je Kamerabild -> Bildschirmbreiten je Sekunde, nach oben begrenzt
+  const speed = Math.min(CAM_MAX_FLOW / camDt, 1.5 * W);
+  updatePalette(stamp);
+  gl.useProgram(P.field.p);
+  gl.uniform1i(P.field.u.uFlow, 1);
+  gl.uniform1i(P.field.u.uPalette, 2);
+  gl.uniform1f(P.field.u.uRandom, 0);
+  gl.uniform1i(P.field.u.uTarget, bind(0, velocity.read));
+  gl.uniform2f(P.field.u.uVelScale, speed / W * velocity.read.w, speed / H * velocity.read.h);
+  gl.uniform1f(P.field.u.uDyeMode, 0);
+  gl.uniform1f(P.field.u.uBias, 0);
+  gl.uniform1f(P.field.u.uGain, 0.3);        // sanft mitnehmen statt hart vorgeben
+  draw(velocity.write);
+  velocity.swap();
+
+  // optional: gewählte Flüssigkeit oder Zufallsfarben dort einspritzen, wo sich etwas bewegt
+  if (cam.color !== 'off') {
+    const col = activeAbsorbance();
+    gl.uniform1f(P.field.u.uRandom, cam.color === 'random' ? 1 : 0);
+    gl.uniform1i(P.field.u.uTarget, bind(0, dye.read));
+    gl.uniform3f(P.field.u.uColor, col[0], col[1], col[2]);
+    gl.uniform1f(P.field.u.uDyeMode, 1);
+    gl.uniform1f(P.field.u.uBias, 0.3);
+    gl.uniform1f(P.field.u.uGain, 1.5);
+    draw(dye.write);
+    dye.swap();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Simulationsschritt (Stable Fluids)                                 */
+/* ------------------------------------------------------------------ */
+function step(dt) {
+  const tx = 1 / velocity.read.w, ty = 1 / velocity.read.h;
+
+  // 1) Wirbelverstärkung
+  if (state.curl > 0) {
+    gl.useProgram(P.curl.p);
+    gl.uniform2f(P.curl.u.texelSize, tx, ty);
+    gl.uniform1i(P.curl.u.uVelocity, bind(0, velocity.read));
+    draw(curl);
+
+    gl.useProgram(P.vorticity.p);
+    gl.uniform2f(P.vorticity.u.texelSize, tx, ty);
+    gl.uniform1i(P.vorticity.u.uVelocity, bind(0, velocity.read));
+    gl.uniform1i(P.vorticity.u.uCurl, bind(1, curl));
+    gl.uniform1f(P.vorticity.u.uCurlStrength, state.curl);
+    gl.uniform1f(P.vorticity.u.uDt, dt);
+    draw(velocity.write);
+    velocity.swap();
+  }
+
+  // 2) Divergenz
+  gl.useProgram(P.divergence.p);
+  gl.uniform2f(P.divergence.u.texelSize, tx, ty);
+  gl.uniform1i(P.divergence.u.uVelocity, bind(0, velocity.read));
+  draw(divergence);
+
+  // 3) Druck (Jacobi-Iteration, alter Druck als Startwert)
+  gl.useProgram(P.copy.p);
+  gl.uniform1f(P.copy.u.uScale, 0.8);
+  gl.uniform1i(P.copy.u.uTex, bind(0, pressure.read));
+  draw(pressure.write);
+  pressure.swap();
+
+  gl.useProgram(P.pressure.p);
+  gl.uniform2f(P.pressure.u.texelSize, tx, ty);
+  gl.uniform1i(P.pressure.u.uDivergence, bind(1, divergence));
+  for (let i = 0; i < PRESSURE_ITERATIONS; i++) {
+    gl.uniform1i(P.pressure.u.uPressure, bind(0, pressure.read));
+    draw(pressure.write);
+    pressure.swap();
+  }
+
+  // 4) Druckgradient abziehen -> inkompressible Strömung
+  gl.useProgram(P.gradient.p);
+  gl.uniform2f(P.gradient.u.texelSize, tx, ty);
+  gl.uniform1i(P.gradient.u.uPressure, bind(0, pressure.read));
+  gl.uniform1i(P.gradient.u.uVelocity, bind(1, velocity.read));
+  draw(velocity.write);
+  velocity.swap();
+
+  // 5) Advektion: Strömung transportiert sich selbst und die Farbe
+  gl.useProgram(P.advect.p);
+  gl.uniform2f(P.advect.u.uVelTexel, tx, ty);
+  gl.uniform1f(P.advect.u.uDt, dt);
+
+  gl.uniform2f(P.advect.u.uSrcTexel, tx, ty);
+  gl.uniform1i(P.advect.u.uVelocity, bind(0, velocity.read));
+  gl.uniform1i(P.advect.u.uSource, bind(0, velocity.read));
+  gl.uniform1f(P.advect.u.uDissipation, state.damping);
+  draw(velocity.write);
+  velocity.swap();
+
+  gl.uniform2f(P.advect.u.uSrcTexel, 1 / dye.read.w, 1 / dye.read.h);
+  gl.uniform1i(P.advect.u.uVelocity, bind(0, velocity.read));
+  gl.uniform1i(P.advect.u.uSource, bind(1, dye.read));
+  gl.uniform1f(P.advect.u.uDissipation, 0);
+  draw(dye.write);
+  dye.swap();
+}
+
+function render() {
+  gl.useProgram(P.display.p);
+  gl.uniform2f(P.display.u.texelSize, 1 / dye.read.w, 1 / dye.read.h);
+  gl.uniform1i(P.display.u.uDye, bind(0, dye.read));
+  const ink = cam.outline && cam.layer && cam.outlineStyle !== 'dye';
+  gl.uniform1i(P.display.u.uInk, ink ? bind(1, cam.layer.read) : 0);
+  gl.uniform1f(P.display.u.uInkDark, ink && cam.outlineStyle === 'ink' ? 1 : 0);
+  gl.uniform1f(P.display.u.uInkGlow, ink && cam.outlineStyle === 'glow' ? 1 : 0);
+  draw(null);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Maus / Touch                                                       */
+/* ------------------------------------------------------------------ */
+const ring = document.getElementById('ring');
+
+function uvOf(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height];
+}
+function updateRing(e) {
+  if (!state.mouse || (e && e.pointerType !== 'mouse')) { ring.style.display = 'none'; return; }
+  if (e) {
+    ring.style.left = e.clientX + 'px';
+    ring.style.top = e.clientY + 'px';
+    ring.style.display = 'block';
+  }
+  const d = 2 * state.brush * canvas.clientHeight;
+  ring.style.width = d + 'px';
+  ring.style.height = d + 'px';
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (!state.mouse) return;
+  state.intro = 0;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  const [x, y] = uvOf(e);
+  pointers.set(e.pointerId, {
+    x, y, px: x, py: y, up: false,
+    stir: state.tool === 'stir' || e.button === 2 || e.shiftKey || e.ctrlKey,
+    color: activeAbsorbance()
+  });
+  updateRing(e);
+});
+canvas.addEventListener('pointermove', e => {
+  updateRing(e);
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  const [x, y] = uvOf(e);
+  p.x = x; p.y = y;
+});
+function release(e) {
+  const p = pointers.get(e.pointerId);
+  if (p) p.up = true;
+}
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('pointerleave', e => { if (!pointers.has(e.pointerId)) ring.style.display = 'none'; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ------------------------------------------------------------------ */
+/*  Bedienfeld                                                         */
+/* ------------------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+const swatches = Array.from(document.querySelectorAll('.sw'));
+const colorPick = $('colorPick');
+
+function refreshSwatches() {
+  swatches.forEach((el, i) => {
+    if (i < 3) el.style.background = state.colors[i];
+    el.setAttribute('aria-checked', String(i === state.active));
+  });
+  meterBars.forEach((b, i) => { b.style.background = state.colors[i % 3]; });
+  colorPick.disabled = state.active === 3;
+  if (state.active < 3) colorPick.value = state.colors[state.active];
+}
+function selectLiquid(i) {
+  state.active = i;
+  refreshSwatches();
+}
+swatches.forEach((el, i) => el.addEventListener('click', () => selectLiquid(i)));
+colorPick.addEventListener('input', () => {
+  if (state.active < 3) {
+    state.colors[state.active] = colorPick.value;
+    refreshSwatches();
+  }
+});
+
+function setTool(t) {
+  state.tool = t;
+  $('toolPour').setAttribute('aria-pressed', String(t === 'pour'));
+  $('toolStir').setAttribute('aria-pressed', String(t === 'stir'));
+}
+$('toolPour').addEventListener('click', () => setTool('pour'));
+$('toolStir').addEventListener('click', () => setTool('stir'));
+
+$('brush').addEventListener('input', e => { state.brush = parseFloat(e.target.value); updateRing(null); });
+$('visc').addEventListener('input', e => { state.damping = parseFloat(e.target.value); });
+$('curl').addEventListener('input', e => { state.curl = parseFloat(e.target.value); });
+
+document.querySelectorAll('[data-preset]').forEach(el => {
+  el.addEventListener('click', () => {
+    state.intro = 0;
+    applyPreset(parseFloat(el.dataset.preset));
+  });
+});
+
+function setAuto(on) {
+  state.auto = on;
+  state.intro = 0;
+  $('auto').setAttribute('aria-pressed', String(on));
+}
+function setPaused(on) {
+  state.paused = on;
+  $('pause').setAttribute('aria-pressed', String(on));
+  $('pause').textContent = on ? 'Weiter' : 'Pause';
+}
+$('auto').addEventListener('click', () => setAuto(!state.auto));
+$('modeMouse').addEventListener('click', () => {
+  state.mouse = !state.mouse;
+  $('modeMouse').setAttribute('aria-pressed', String(state.mouse));
+  canvas.style.cursor = state.mouse ? 'crosshair' : 'default';
+  if (!state.mouse) {
+    for (const p of pointers.values()) p.up = true;
+    ring.style.display = 'none';
+  }
+});
+$('pause').addEventListener('click', () => setPaused(!state.paused));
+
+$('toggle').addEventListener('click', () => {
+  const closed = $('panel').classList.toggle('closed');
+  $('toggle').textContent = closed ? '+' : '–';
+  $('body').inert = closed;
+});
+
+window.addEventListener('keydown', e => {
+  const tag = e.target && e.target.tagName;
+  if (tag === 'SELECT') return;
+  if (e.code === 'Space' && tag !== 'BUTTON' && tag !== 'INPUT') {
+    e.preventDefault();
+    setPaused(!state.paused);
+  } else if (e.key >= '1' && e.key <= '4') {
+    selectLiquid(parseInt(e.key, 10) - 1);
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Start                                                              */
+/* ------------------------------------------------------------------ */
+resizeCanvas();
+initFramebuffers();
+refreshSwatches();
+applyPreset(0);
+
+let last = performance.now();
+function frame(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  dt = Math.min(Math.max(dt, 1 / 240), 1 / 30);
+
+  if (resizeCanvas()) initFramebuffers();
+  applyInputs(dt);
+  if (!state.paused) {
+    step(dt);
+    outlineStep(dt);
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

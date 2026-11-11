@@ -1,0 +1,1660 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Flüssigkeiten mischen – 3D</title>
+<style>
+  :root {
+    --ink: #1b2530;
+    --ink-soft: #5a6878;
+    --panel: rgba(255, 255, 255, 0.86);
+    --line: rgba(20, 35, 55, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #e6ebf1; color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #tank {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    display: block; touch-action: none; cursor: grab;
+  }
+  #panel {
+    position: fixed; top: 14px; left: 14px; width: 264px;
+    max-height: calc(100% - 28px); overflow: auto;
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 10px 34px rgba(15, 30, 50, 0.2);
+    user-select: none; -webkit-user-select: none;
+  }
+  #panel header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; }
+  #panel h1 { margin: 0; font-size: 15px; font-weight: 650; flex: 1; }
+  #fps { font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  #toggle {
+    border: 0; background: none; cursor: pointer; color: var(--ink-soft);
+    width: 28px; height: 28px; border-radius: 8px; font-size: 16px; line-height: 1;
+  }
+  #toggle:hover { background: rgba(20, 35, 55, 0.08); }
+  #body { padding: 0 14px 14px; }
+  #panel.closed #body { height: 0; padding: 0; overflow: hidden; }
+  #panel.closed { width: auto; }
+  [hidden] { display: none !important; }
+
+  .label {
+    font-size: 11px; font-weight: 650; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--ink-soft); margin: 14px 0 7px;
+  }
+  .label:first-child { margin-top: 2px; }
+  .swatches { display: flex; gap: 9px; align-items: center; }
+  .sw {
+    width: 38px; height: 38px; border-radius: 50%; padding: 0; cursor: pointer;
+    border: 2px solid #fff; outline: 1px solid var(--line);
+    box-shadow: inset 0 -5px 9px rgba(0, 0, 0, 0.16);
+  }
+  .sw[aria-checked="true"] { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+  .sw.water {
+    background:
+      radial-gradient(circle at 35% 30%, #fff 0 18%, transparent 19%),
+      linear-gradient(160deg, #f6fbff, #d8eaf8);
+  }
+  .pick { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+  .pick input { width: 34px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
+  .pick input:disabled { opacity: 0.35; cursor: default; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .seg3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  button.b {
+    font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+    padding: 8px 6px; border-radius: 9px;
+    border: 1px solid var(--line); background: rgba(255, 255, 255, 0.75);
+  }
+  button.b:hover { background: #fff; border-color: rgba(20, 35, 55, 0.28); }
+  button.b[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.b.wide { width: 100%; margin-top: 6px; }
+  button.b:disabled { opacity: 0.45; cursor: default; }
+
+  .slider { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; margin: 7px 0; }
+  .slider span { font-size: 13px; }
+  input[type="range"] { width: 100%; margin: 0; accent-color: var(--ink); cursor: pointer; }
+  select.sel {
+    width: 100%; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+    padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: #fff;
+  }
+  #meter { display: flex; align-items: flex-end; gap: 4px; height: 28px; margin: 9px 0 6px; }
+  #meter i { flex: 1; height: 2px; border-radius: 2px; background: var(--ink); }
+  .status { font-size: 12px; color: var(--ink-soft); margin-top: 7px; }
+  .status:empty { display: none; }
+  .status.err { color: #b3261e; }
+  #camVideo {
+    display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+    margin: 8px 0 6px; border-radius: 9px; background: #10161d; transform: scaleX(-1);
+  }
+  .hint { margin: 14px 0 0; padding-top: 11px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); }
+  .hint b { color: var(--ink); font-weight: 600; }
+  .hint a { color: inherit; }
+  #error { position: fixed; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; font-size: 16px; background: #e6ebf1; }
+  @media (max-width: 560px) { #panel { top: 8px; left: 8px; width: 232px; max-height: calc(100% - 16px); } }
+</style>
+</head>
+<body>
+
+<canvas id="tank"></canvas>
+
+<aside id="panel">
+  <header>
+    <h1>Flüssigkeiten in 3D</h1>
+    <span id="fps"></span>
+    <button id="toggle" title="Bedienfeld ein-/ausklappen" aria-label="Bedienfeld ein-/ausklappen">–</button>
+  </header>
+  <div id="body">
+    <div class="label">Flüssigkeit</div>
+    <div class="swatches" role="radiogroup" aria-label="Flüssigkeit auswählen">
+      <button class="sw" data-i="0" role="radio" aria-checked="true" title="Flüssigkeit A (Taste 1)"></button>
+      <button class="sw" data-i="1" role="radio" aria-checked="false" title="Flüssigkeit B (Taste 2)"></button>
+      <button class="sw" data-i="2" role="radio" aria-checked="false" title="Flüssigkeit C (Taste 3)"></button>
+      <button class="sw water" data-i="3" role="radio" aria-checked="false" title="Klares Wasser zum Verdünnen (Taste 4)"></button>
+      <label class="pick" title="Farbe der gewählten Flüssigkeit ändern">Farbe
+        <input type="color" id="colorPick" value="#0a8cf2">
+      </label>
+    </div>
+
+    <div class="label">Werkzeug</div>
+    <div class="grid2">
+      <button class="b" id="toolPour" aria-pressed="true">Einfüllen</button>
+      <button class="b" id="toolStir" aria-pressed="false">Rühren</button>
+    </div>
+    <label class="slider" title="Wie tief im Becken die Maus wirkt: links hinten, rechts vorn"><span>Tiefe</span>
+      <input type="range" id="depth" min="-0.42" max="0.42" step="0.01" value="0"></label>
+
+    <div class="label">Modi – an / aus</div>
+    <div class="grid2">
+      <button class="b" id="modeMouse" aria-pressed="true" title="Reaktion auf Maus und Touch im Becken">Maus</button>
+      <button class="b" id="auto" aria-pressed="false" title="Ein unsichtbarer Rührstab rührt von selbst">Automatik</button>
+      <button class="b" id="modeAudio" aria-pressed="false" title="Reaktion auf Ton">Audio</button>
+      <button class="b" id="modeCam" aria-pressed="false" title="Bewegungen vor der Kamera schieben die Flüssigkeit">Kamera</button>
+    </div>
+    <div class="status" id="audioStatus" role="status"></div>
+    <div class="status" id="camStatus" role="status"></div>
+
+    <div id="audioBox" hidden>
+      <div class="label">Audioquelle</div>
+      <select class="sel" id="audioSrc" aria-label="Audioquelle wählen">
+        <optgroup label="Mikrofon / Eingang" id="micGroup">
+          <option value="mic:">Standard-Mikrofon</option>
+        </optgroup>
+        <optgroup label="Weitere Quellen" id="otherGroup">
+          <option value="system">System- oder Tab-Ton …</option>
+          <option value="file">Audiodatei öffnen …</option>
+        </optgroup>
+      </select>
+      <div id="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <label class="slider"><span>Empfindlichkeit</span>
+        <input type="range" id="sens" min="0.3" max="4" step="0.1" value="1"></label>
+      <button class="b wide" id="audioColor" aria-pressed="true">Farbe im Takt einspritzen</button>
+    </div>
+    <input type="file" id="audioFile" accept="audio/*,video/*" hidden>
+
+    <div id="camBox" hidden>
+      <div class="label">Kamera</div>
+      <select class="sel" id="camSrc" aria-label="Kamera wählen">
+        <option value="">Standard-Kamera</option>
+      </select>
+      <video id="camVideo" muted playsinline></video>
+      <label class="slider"><span>Empfindlichkeit</span>
+        <input type="range" id="camSens" min="0.3" max="4" step="0.1" value="1"></label>
+      <div class="label">Farbe bei Bewegung</div>
+      <div class="seg3" id="camColorSeg">
+        <button class="b" data-cc="off" aria-pressed="true">Aus</button>
+        <button class="b" data-cc="pick" aria-pressed="false">Gewählte</button>
+        <button class="b" data-cc="random" aria-pressed="false">Zufall</button>
+      </div>
+    </div>
+
+    <div class="label">Ansicht</div>
+    <select class="sel" id="quality" aria-label="Qualität">
+      <option value="low">Qualität: niedrig (48³) – schnell</option>
+      <option value="mid" selected>Qualität: mittel (64³)</option>
+      <option value="high">Qualität: hoch (96³)</option>
+      <option value="ultra">Qualität: sehr hoch (128³) – starke Grafikkarte</option>
+    </select>
+    <button class="b wide" id="spin" aria-pressed="false">Becken langsam drehen</button>
+
+    <div class="label">Einstellungen</div>
+    <label class="slider"><span>Pinselgröße</span>
+      <input type="range" id="brush" min="0.03" max="0.2" step="0.005" value="0.08"></label>
+    <label class="slider" title="Wie schnell die Bewegung abklingt"><span>Zähigkeit</span>
+      <input type="range" id="visc" min="0" max="3" step="0.05" value="0.25"></label>
+    <label class="slider"><span>Wirbel</span>
+      <input type="range" id="curl" min="0" max="40" step="1" value="10"></label>
+    <label class="slider" title="Rechts: Tinte sinkt. Links: Tinte steigt auf. Mitte: schwebt."><span>Schwerkraft</span>
+      <input type="range" id="gravity" min="-1" max="1" step="0.05" value="0.35"></label>
+
+    <div class="label">Startbild</div>
+    <div class="grid2">
+      <button class="b" data-preset="0">Tropfen</button>
+      <button class="b" data-preset="1">Zwei Hälften</button>
+      <button class="b" data-preset="2">Schichten</button>
+      <button class="b" data-preset="3">Nur Wasser</button>
+    </div>
+    <button class="b wide" id="pause" aria-pressed="false">Pause</button>
+
+    <p class="hint">
+      <b>Im Becken ziehen:</b> Werkzeug anwenden (Shift = nur rühren).
+      <b>Neben dem Becken ziehen</b> oder <b>rechte Maustaste:</b> Ansicht drehen.
+      <b>Mausrad:</b> Zoom. <b>Leertaste:</b> Pause.
+      <a href="fluessigkeiten-mischen.html">Zur 2D-Version</a>
+    </p>
+  </div>
+</aside>
+
+<div id="error">Dieser Browser unterstützt die benötigten WebGL-2-Funktionen leider nicht.</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/*  WebGL 2                                                            */
+/* ------------------------------------------------------------------ */
+const canvas = document.getElementById('tank');
+const $ = id => document.getElementById(id);
+
+function fail() {
+  $('error').style.display = 'grid';
+  $('panel').style.display = 'none';
+}
+
+const gl = canvas.getContext('webgl2', { alpha: false, depth: false, stencil: false, antialias: false });
+if (!gl) { fail(); return; }
+gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('EXT_color_buffer_half_float');
+
+/* ------------------------------------------------------------------ */
+/*  Shader                                                             */
+/*  Das 3D-Raster liegt als Kachel-Atlas in einer 2D-Textur:           */
+/*  jede Kachel ist eine Schicht (z) mit N x N Zellen.                 */
+/* ------------------------------------------------------------------ */
+const VERT = `#version 300 es
+layout(location = 0) in vec2 aPosition;
+out vec2 vUv;
+void main () {
+  vUv = aPosition;
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}`;
+
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+uniform int uN;
+uniform int uCols;
+in vec2 vUv;
+out vec4 outColor;
+
+ivec3 voxel () {
+  ivec2 fc = ivec2(gl_FragCoord.xy);
+  ivec2 tile = fc / uN;
+  return ivec3(fc - tile * uN, tile.y * uCols + tile.x);
+}
+vec4 self (sampler2D t) {
+  return texelFetch(t, ivec2(gl_FragCoord.xy), 0);
+}
+vec4 fetch3 (sampler2D t, ivec3 c) {
+  c = clamp(c, ivec3(0), ivec3(uN - 1));
+  return texelFetch(t, ivec2(c.z % uCols, c.z / uCols) * uN + c.xy, 0);
+}
+// trilinear; p in Zellen, Zellmitten bei +0.5
+vec4 sample3 (sampler2D t, vec3 p) {
+  float n = float(uN);
+  float cols = float(uCols);
+  p = clamp(p, vec3(0.5), vec3(n - 0.5));
+  float z = p.z - 0.5;
+  float z0 = floor(z);
+  float f = z - z0;
+  float z1 = min(z0 + 1.0, n - 1.0);
+  vec2 size = vec2(textureSize(t, 0));
+  vec2 o0 = vec2(mod(z0, cols), floor((z0 + 0.5) / cols)) * n;
+  vec2 o1 = vec2(mod(z1, cols), floor((z1 + 0.5) / cols)) * n;
+  return mix(texture(t, (o0 + p.xy) / size), texture(t, (o1 + p.xy) / size), f);
+}
+`;
+
+// Startbilder (Werte = Absorption, 0 = klares Wasser)
+const FRAG_INIT = `
+uniform int uMode;
+uniform vec3 uA;
+uniform vec3 uB;
+uniform vec3 uC;
+float ball (vec3 p, vec3 c, float r) {
+  return 1.0 - smoothstep(r * 0.8, r, length(p - c));
+}
+void main () {
+  vec3 p = (vec3(voxel()) + 0.5) / float(uN);
+  vec3 d = vec3(0.0);
+  if (uMode == 0) {
+    d = mix(d, uA, ball(p, vec3(0.30, 0.74, 0.42), 0.15));
+    d = mix(d, uB, ball(p, vec3(0.70, 0.66, 0.58), 0.14));
+    d = mix(d, uC, ball(p, vec3(0.50, 0.80, 0.26), 0.12));
+  } else if (uMode == 1) {
+    d = mix(uA, uB, smoothstep(0.47, 0.53, p.x)) * 0.3;
+  } else if (uMode == 2) {
+    float wave = 0.02 * sin(p.x * 19.0) * sin(p.z * 15.0);
+    d = uA * 0.35 * (1.0 - smoothstep(0.30, 0.34, p.y));
+    d = mix(d, uB * 0.4, smoothstep(0.68, 0.72, p.y + wave));
+  }
+  outColor = vec4(d, 1.0);
+}`;
+
+// Pinselstrich als Kapsel zwischen zwei Punkten im Raum
+const FRAG_SPLAT = `
+uniform sampler2D uTarget;
+uniform vec3 uA;
+uniform vec3 uB;
+uniform vec3 uValue;
+uniform float uRadius;
+uniform float uHard;
+uniform float uStrength;
+void main () {
+  vec3 p = vec3(voxel()) + 0.5;
+  vec3 pa = p - uA;
+  vec3 ba = uB - uA;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.000001), 0.0, 1.0);
+  float d = length(pa - ba * h) / uRadius;
+  float g = mix(exp(-d * d), 1.0 - smoothstep(0.7, 1.0, d), uHard);
+  vec3 base = self(uTarget).xyz;
+  outColor = vec4(mix(base, uValue, clamp(g * uStrength, 0.0, 1.0)), 1.0);
+}`;
+
+const FRAG_ADVECT = `
+uniform sampler2D uVel;
+uniform sampler2D uSrc;
+uniform float uDt;
+uniform float uDissipation;
+void main () {
+  vec3 p = vec3(voxel()) + 0.5;
+  vec3 v = self(uVel).xyz;
+  outColor = sample3(uSrc, p - uDt * v) / (1.0 + uDissipation * abs(uDt));
+}`;
+
+// MacCormack-Korrektur: hält Farbkanten deutlich schärfer als einfache Advektion
+const FRAG_MACCORMACK = `
+uniform sampler2D uVel;
+uniform sampler2D uOrig;
+uniform sampler2D uFwd;
+uniform sampler2D uBack;
+uniform float uDt;
+void main () {
+  vec3 p = vec3(voxel()) + 0.5;
+  vec3 q = p - uDt * self(uVel).xyz;
+  vec4 r = self(uFwd) + 0.5 * (self(uOrig) - self(uBack));
+  ivec3 b = ivec3(floor(clamp(q, vec3(0.5), vec3(float(uN) - 0.5)) - 0.5));
+  vec4 mn = fetch3(uOrig, b);
+  vec4 mx = mn;
+  for (int i = 1; i < 8; i++) {
+    vec4 s = fetch3(uOrig, b + ivec3(i & 1, (i >> 1) & 1, (i >> 2) & 1));
+    mn = min(mn, s);
+    mx = max(mx, s);
+  }
+  outColor = clamp(r, mn, mx);
+}`;
+
+const FRAG_CURL = `
+uniform sampler2D uVel;
+void main () {
+  ivec3 c = voxel();
+  vec3 L = fetch3(uVel, c - ivec3(1, 0, 0)).xyz;
+  vec3 R = fetch3(uVel, c + ivec3(1, 0, 0)).xyz;
+  vec3 B = fetch3(uVel, c - ivec3(0, 1, 0)).xyz;
+  vec3 T = fetch3(uVel, c + ivec3(0, 1, 0)).xyz;
+  vec3 K = fetch3(uVel, c - ivec3(0, 0, 1)).xyz;
+  vec3 F = fetch3(uVel, c + ivec3(0, 0, 1)).xyz;
+  outColor = vec4(0.5 * vec3((T.z - B.z) - (F.y - K.y),
+                             (F.x - K.x) - (R.z - L.z),
+                             (R.y - L.y) - (T.x - B.x)), 1.0);
+}`;
+
+// Wirbelverstärkung + Auftrieb/Schwerkraft der Tinte
+const FRAG_FORCES = `
+uniform sampler2D uVel;
+uniform sampler2D uCurl;
+uniform sampler2D uDye;
+uniform float uDt;
+uniform float uCurlStrength;
+uniform float uGravity;
+float len (ivec3 c) { return length(fetch3(uCurl, c).xyz); }
+void main () {
+  ivec3 c = voxel();
+  vec3 eta = 0.5 * vec3(len(c + ivec3(1, 0, 0)) - len(c - ivec3(1, 0, 0)),
+                        len(c + ivec3(0, 1, 0)) - len(c - ivec3(0, 1, 0)),
+                        len(c + ivec3(0, 0, 1)) - len(c - ivec3(0, 0, 1)));
+  vec3 w = self(uCurl).xyz;
+  vec3 force = uCurlStrength * cross(eta / (length(eta) + 0.0001), w);
+  force.y -= uGravity * dot(self(uDye).rgb, vec3(0.3333));
+  outColor = vec4(self(uVel).xyz + force * uDt, 1.0);
+}`;
+
+const FRAG_DIVERGENCE = `
+uniform sampler2D uVel;
+void main () {
+  ivec3 c = voxel();
+  int m = uN - 1;
+  vec3 C = self(uVel).xyz;
+  float L = c.x == 0 ? -C.x : fetch3(uVel, c - ivec3(1, 0, 0)).x;
+  float R = c.x == m ? -C.x : fetch3(uVel, c + ivec3(1, 0, 0)).x;
+  float B = c.y == 0 ? -C.y : fetch3(uVel, c - ivec3(0, 1, 0)).y;
+  float T = c.y == m ? -C.y : fetch3(uVel, c + ivec3(0, 1, 0)).y;
+  float K = c.z == 0 ? -C.z : fetch3(uVel, c - ivec3(0, 0, 1)).z;
+  float F = c.z == m ? -C.z : fetch3(uVel, c + ivec3(0, 0, 1)).z;
+  outColor = vec4(0.5 * (R - L + T - B + F - K), 0.0, 0.0, 1.0);
+}`;
+
+const FRAG_PRESSURE = `
+uniform sampler2D uPressure;
+uniform sampler2D uDivergence;
+void main () {
+  ivec3 c = voxel();
+  float s = fetch3(uPressure, c - ivec3(1, 0, 0)).x + fetch3(uPressure, c + ivec3(1, 0, 0)).x
+          + fetch3(uPressure, c - ivec3(0, 1, 0)).x + fetch3(uPressure, c + ivec3(0, 1, 0)).x
+          + fetch3(uPressure, c - ivec3(0, 0, 1)).x + fetch3(uPressure, c + ivec3(0, 0, 1)).x;
+  outColor = vec4((s - self(uDivergence).x) / 6.0, 0.0, 0.0, 1.0);
+}`;
+
+const FRAG_GRADIENT = `
+uniform sampler2D uPressure;
+uniform sampler2D uVel;
+void main () {
+  ivec3 c = voxel();
+  int m = uN - 1;
+  vec3 g = 0.5 * vec3(
+    fetch3(uPressure, c + ivec3(1, 0, 0)).x - fetch3(uPressure, c - ivec3(1, 0, 0)).x,
+    fetch3(uPressure, c + ivec3(0, 1, 0)).x - fetch3(uPressure, c - ivec3(0, 1, 0)).x,
+    fetch3(uPressure, c + ivec3(0, 0, 1)).x - fetch3(uPressure, c - ivec3(0, 0, 1)).x);
+  vec3 v = self(uVel).xyz - g;
+  if (c.x == 0 || c.x == m) v.x = 0.0;
+  if (c.y == 0 || c.y == m) v.y = 0.0;
+  if (c.z == 0 || c.z == m) v.z = 0.0;
+  outColor = vec4(v, 1.0);
+}`;
+
+// Kamera: 2D-Bewegungsfeld wirkt von der Vorderseite des Beckens aus
+const FRAG_FIELD = `
+uniform sampler2D uTarget;
+uniform sampler2D uFlow;
+uniform sampler2D uPalette;
+uniform vec2 uVelScale;
+uniform vec3 uColor;
+uniform float uRandom;
+uniform float uDyeMode;
+uniform float uBias;
+uniform float uGain;
+void main () {
+  vec3 p = (vec3(voxel()) + 0.5) / float(uN);
+  vec4 f = texture(uFlow, p.xy);
+  vec3 base = self(uTarget).xyz;
+  vec2 v = (f.xy * 255.0 - 128.0) / 127.0 * uVelScale;
+  vec3 rnd = -log(max(texture(uPalette, p.xy).rgb, vec3(0.03)));
+  vec3 target = mix(vec3(v, 0.0), mix(uColor, rnd, uRandom), uDyeMode);
+  float push = smoothstep(0.15, 0.85, p.z);
+  float band = smoothstep(0.45, 0.6, p.z) * (1.0 - smoothstep(0.75, 0.9, p.z));
+  float s = clamp((mix(f.a, f.b, uDyeMode) - uBias) * uGain, 0.0, 1.0) * mix(push, band, uDyeMode);
+  outColor = vec4(mix(base, target, s), 1.0);
+}`;
+
+// Darstellung: Strahl durch das Becken, Tinte absorbiert und streut Licht
+const FRAG_VOLUME = `
+uniform sampler2D uDye;
+uniform vec3 uCamPos;
+uniform mat3 uCam;
+uniform float uTanHalf;
+uniform float uAspect;
+uniform int uSteps;
+uniform vec3 uLightVox;
+float hash (vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main () {
+  vec3 rd = normalize(uCam[2] + vUv.x * uAspect * uTanHalf * uCam[0] + vUv.y * uTanHalf * uCam[1]);
+  vec3 bg = mix(vec3(0.80, 0.84, 0.89), vec3(0.96, 0.97, 0.985), smoothstep(-1.0, 0.9, vUv.y));
+  bg *= 1.0 - 0.10 * dot(vUv, vUv);
+
+  vec3 inv = 1.0 / rd;
+  vec3 ta = (vec3(-0.5) - uCamPos) * inv;
+  vec3 tb = (vec3(0.5) - uCamPos) * inv;
+  vec3 t0 = min(ta, tb);
+  vec3 t1 = max(ta, tb);
+  float tn = max(max(t0.x, t0.y), max(t0.z, 0.0));
+  float tf = min(min(t1.x, t1.y), t1.z);
+  if (tn >= tf) { outColor = vec4(bg, 1.0); return; }
+
+  float n = float(uN);
+  float ds = 1.7321 / float(uSteps);
+  float k = 6.0 * ds;                       // optische Dichte je Schritt
+  vec3 T = vec3(1.0);
+  vec3 col = vec3(0.0);
+  float t = tn + ds * hash(gl_FragCoord.xy);
+  for (int i = 0; i < 200; i++) {
+    if (i >= uSteps || t > tf) break;
+    vec3 q = (uCamPos + rd * t + 0.5) * n;
+    vec3 a = sample3(uDye, q).rgb;
+    float d = (a.r + a.g + a.b) * 0.3333;
+    if (d > 0.003) {
+      float d2 = dot(sample3(uDye, q + uLightVox).rgb, vec3(0.3333));
+      float lit = clamp(0.78 + 1.5 * (d - d2), 0.35, 1.3);
+      vec3 pig = exp(-1.2 * a / d);          // Farbton des Gemischs (subtraktiv)
+      float sc = d * k * 0.9;
+      col += T * (1.0 - exp(-sc)) * pig * lit;
+      T *= exp(-(a * k * 0.8 + sc));
+      if (max(T.r, max(T.g, T.b)) < 0.01) break;
+    }
+    t += ds;
+  }
+  vec3 tint = vec3(0.965, 0.98, 0.995);     // das Wasser selbst ganz leicht sichtbar
+  outColor = vec4(bg * tint * T + col, 1.0);
+}`;
+
+const VERT_LINES = `#version 300 es
+layout(location = 0) in vec3 aPos;
+uniform vec3 uCamPos;
+uniform mat3 uCam;
+uniform float uTanHalf;
+uniform float uAspect;
+void main () {
+  vec3 d = aPos - uCamPos;
+  float z = dot(d, uCam[2]);
+  gl_Position = vec4(dot(d, uCam[0]) / (uTanHalf * uAspect), dot(d, uCam[1]) / uTanHalf, 0.0, z);
+}`;
+const FRAG_LINES = `#version 300 es
+precision mediump float;
+out vec4 outColor;
+void main () { outColor = vec4(0.12, 0.17, 0.23, 0.42); }`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'Shader-Fehler');
+  return s;
+}
+function link(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || 'Link-Fehler');
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, '');
+    u[name] = gl.getUniformLocation(p, name);
+  }
+  return { p, u };
+}
+
+let P;
+try {
+  const vs = compile(gl.VERTEX_SHADER, VERT);
+  const sim = src => link(vs, compile(gl.FRAGMENT_SHADER, HEAD + src));
+  P = {
+    init: sim(FRAG_INIT), splat: sim(FRAG_SPLAT), advect: sim(FRAG_ADVECT), mac: sim(FRAG_MACCORMACK),
+    curl: sim(FRAG_CURL), forces: sim(FRAG_FORCES), divergence: sim(FRAG_DIVERGENCE),
+    pressure: sim(FRAG_PRESSURE), gradient: sim(FRAG_GRADIENT), field: sim(FRAG_FIELD), volume: sim(FRAG_VOLUME),
+    lines: link(compile(gl.VERTEX_SHADER, VERT_LINES), compile(gl.FRAGMENT_SHADER, FRAG_LINES))
+  };
+} catch (err) {
+  console.error(err);
+  fail();
+  return;
+}
+
+// Geometrie: Vollbild-Rechteck und die 12 Kanten des Beckens
+const quadVAO = gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
+
+const lineVAO = gl.createVertexArray();
+gl.bindVertexArray(lineVAO);
+{
+  const h = 0.5, v = [];
+  const corner = i => [(i & 1) ? h : -h, (i & 2) ? h : -h, (i & 4) ? h : -h];
+  for (let i = 0; i < 8; i++) {
+    for (const bit of [1, 2, 4]) {
+      if (!(i & bit)) v.push(...corner(i), ...corner(i | bit));
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+}
+gl.bindVertexArray(quadVAO);
+
+/* ------------------------------------------------------------------ */
+/*  Raster / Framebuffer                                               */
+/* ------------------------------------------------------------------ */
+const QUALITY = {
+  low:   { n: 48,  cols: 8,  rows: 6, height: 420, steps: 56 },
+  mid:   { n: 64,  cols: 8,  rows: 8, height: 560, steps: 72 },
+  high:  { n: 96,  cols: 12, rows: 8, height: 760, steps: 104 },
+  ultra: { n: 128, cols: 16, rows: 8, height: 960, steps: 136 }
+};
+const QUALITY_ORDER = ['low', 'mid', 'high', 'ultra'];
+const PRESSURE_ITERATIONS = 22;
+let quality = 'mid';
+let G = QUALITY[quality];
+
+function createFBO(w, h, filter) {
+  gl.activeTexture(gl.TEXTURE0);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo, w, h, ok };
+}
+function createDouble(w, h, filter) {
+  return {
+    read: createFBO(w, h, filter), write: createFBO(w, h, filter),
+    swap() { const t = this.read; this.read = this.write; this.write = t; }
+  };
+}
+function destroyFBO(f) { gl.deleteTexture(f.tex); gl.deleteFramebuffer(f.fbo); }
+function clearFBO(f) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+  gl.viewport(0, 0, f.w, f.h);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function bind(unit, f) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, f.tex);
+  return unit;
+}
+
+{
+  const t = createFBO(4, 4, gl.LINEAR);
+  const ok = t.ok;
+  destroyFBO(t);
+  if (!ok) { fail(); return; }
+}
+
+let velocity = null, dye = null, dyeFwd = null, dyeBack = null, pressure = null, divergence = null, curlTex = null;
+
+function allocate() {
+  for (const f of [dyeFwd, dyeBack, divergence, curlTex]) if (f) destroyFBO(f);
+  for (const d of [velocity, dye, pressure]) if (d) { destroyFBO(d.read); destroyFBO(d.write); }
+  const w = G.cols * G.n, h = G.rows * G.n;
+  velocity = createDouble(w, h, gl.LINEAR);
+  dye = createDouble(w, h, gl.LINEAR);
+  dyeFwd = createFBO(w, h, gl.LINEAR);
+  dyeBack = createFBO(w, h, gl.LINEAR);
+  pressure = createDouble(w, h, gl.NEAREST);
+  divergence = createFBO(w, h, gl.NEAREST);
+  curlTex = createFBO(w, h, gl.NEAREST);
+}
+
+// Ein Rechenschritt über das ganze Raster
+function pass(prog, target, setup) {
+  gl.useProgram(prog.p);
+  gl.uniform1i(prog.u.uN, G.n);
+  gl.uniform1i(prog.u.uCols, G.cols);
+  setup(prog.u);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  gl.viewport(0, 0, target.w, target.h);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function resizeCanvas() {
+  const ch = Math.max(2, canvas.clientHeight), cw = Math.max(2, canvas.clientWidth);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const h = Math.round(Math.min(ch * dpr, G.height));
+  const w = Math.round(h * cw / ch);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Zustand                                                            */
+/* ------------------------------------------------------------------ */
+const state = {
+  colors: ['#0a8cf2', '#ffe01a', '#f0197d'],
+  active: 0, tool: 'pour', mouse: true,
+  brush: 0.08, depth: 0, damping: 0.25, curl: 10, gravity: 0.35,
+  auto: false, spin: false, paused: false, preset: 0
+};
+const view = { yaw: 0.55, pitch: 0.28, dist: 2.35 };
+const TAN_HALF = Math.tan(20 * Math.PI / 180);
+
+function absorbance(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => -Math.log(Math.max(v / 255, 0.03)));
+}
+function activeAbsorbance() {
+  return state.active === 3 ? [0, 0, 0] : absorbance(state.colors[state.active]);
+}
+
+function applyPreset(mode) {
+  state.preset = mode;
+  pass(P.init, dye.read, u => {
+    gl.uniform1i(u.uMode, mode);
+    gl.uniform3fv(u.uA, absorbance(state.colors[0]));
+    gl.uniform3fv(u.uB, absorbance(state.colors[1]));
+    gl.uniform3fv(u.uC, absorbance(state.colors[2]));
+  });
+  for (const f of [velocity.read, velocity.write, pressure.read, pressure.write]) clearFBO(f);
+}
+
+// a, b: Punkte in Zellen; mischt den Zielwert in einer Kapsel ein
+function splat(target, a, b, radius, value, hard, strength) {
+  pass(P.splat, target.write, u => {
+    gl.uniform1i(u.uTarget, bind(0, target.read));
+    gl.uniform3f(u.uA, a[0], a[1], a[2]);
+    gl.uniform3f(u.uB, b[0], b[1], b[2]);
+    gl.uniform3f(u.uValue, value[0], value[1], value[2]);
+    gl.uniform1f(u.uRadius, radius);
+    gl.uniform1f(u.uHard, hard);
+    gl.uniform1f(u.uStrength, strength);
+  });
+  target.swap();
+}
+
+function stroke(a, b, dt, radius, pour, color) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  if (Math.abs(d[0]) + Math.abs(d[1]) + Math.abs(d[2]) > 1e-4) {
+    splat(velocity, a, b, radius * 1.15, [d[0] / dt, d[1] / dt, d[2] / dt], 0, 1);
+  }
+  if (pour) splat(dye, a, b, radius, color, 1, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Ansicht (Kamera im Raum) und Maus                                  */
+/* ------------------------------------------------------------------ */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+function camera() {
+  const cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+  const pos = [view.dist * Math.sin(view.yaw) * cp, view.dist * sp, view.dist * Math.cos(view.yaw) * cp];
+  const f = norm([-pos[0], -pos[1], -pos[2]]);
+  const r = norm([-f[2], 0, f[0]]);
+  const u = cross(r, f);
+  return { pos, r, u, f };
+}
+
+function rayAt(e, cam) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const y = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+  const ax = x * (rect.width / rect.height) * TAN_HALF, ay = y * TAN_HALF;
+  return norm([cam.f[0] + ax * cam.r[0] + ay * cam.u[0],
+               cam.f[1] + ax * cam.r[1] + ay * cam.u[1],
+               cam.f[2] + ax * cam.r[2] + ay * cam.u[2]]);
+}
+function hitsBox(ro, rd) {
+  let tn = 0, tf = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const inv = 1 / (rd[i] || 1e-9);
+    const a = (-0.5 - ro[i]) * inv, b = (0.5 - ro[i]) * inv;
+    tn = Math.max(tn, Math.min(a, b));
+    tf = Math.min(tf, Math.max(a, b));
+  }
+  return tn < tf;
+}
+// Punkt im Becken: Schnitt des Mausstrahls mit einer Ebene quer zur Blickrichtung
+function tankPoint(e) {
+  const cam = camera();
+  const rd = rayAt(e, cam);
+  const t = (state.depth - dot(cam.pos, cam.f)) / dot(rd, cam.f);
+  return [0, 1, 2].map(i => (Math.min(0.48, Math.max(-0.48, cam.pos[i] + rd[i] * t)) + 0.5) * G.n);
+}
+
+const pointers = new Map();
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  const cam = camera();
+  const inside = hitsBox(cam.pos, rayAt(e, cam));
+  if (state.mouse && inside && e.button !== 2) {
+    const p = tankPoint(e);
+    pointers.set(e.pointerId, {
+      mode: 'tool', cur: p, prev: p, up: false,
+      stir: state.tool === 'stir' || e.shiftKey || e.ctrlKey,
+      color: activeAbsorbance()
+    });
+  } else {
+    pointers.set(e.pointerId, { mode: 'rotate', x: e.clientX, y: e.clientY, up: false });
+    canvas.style.cursor = 'grabbing';
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  if (p.mode === 'tool') {
+    p.cur = tankPoint(e);
+  } else {
+    view.yaw -= (e.clientX - p.x) * 0.006;
+    view.pitch = Math.min(1.4, Math.max(-1.4, view.pitch + (e.clientY - p.y) * 0.006));
+    p.x = e.clientX; p.y = e.clientY;
+  }
+});
+function release(e) {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  if (p.mode === 'tool') p.up = true;
+  else { pointers.delete(e.pointerId); canvas.style.cursor = 'grab'; }
+}
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  view.dist = Math.min(4.5, Math.max(1.35, view.dist * Math.exp(e.deltaY * 0.001)));
+}, { passive: false });
+
+let autoT = 0, autoPrev = null;
+
+function applyInputs(dt) {
+  for (const [id, p] of pointers) {
+    if (p.mode !== 'tool') continue;
+    stroke(p.prev, p.cur, dt, state.brush * G.n, !p.stir, p.color);
+    p.prev = p.cur;
+    if (p.up) pointers.delete(id);
+  }
+  if (state.auto && !state.paused) {
+    autoT += dt;
+    const pos = [0.5 + 0.30 * Math.cos(1.9 * autoT), 0.5 + 0.28 * Math.sin(2.7 * autoT), 0.5 + 0.30 * Math.sin(1.3 * autoT + 1)]
+      .map(v => v * G.n);
+    if (autoPrev) stroke(autoPrev, pos, dt, 0.09 * G.n, false, null);
+    autoPrev = pos;
+  } else {
+    autoPrev = null;
+  }
+  audioReact(dt);
+  camReact();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Simulationsschritt (Stable Fluids in 3D)                           */
+/* ------------------------------------------------------------------ */
+function step(dt) {
+  // 1) Strömung transportiert sich selbst
+  pass(P.advect, velocity.write, u => {
+    gl.uniform1i(u.uVel, bind(0, velocity.read));
+    gl.uniform1i(u.uSrc, 0);
+    gl.uniform1f(u.uDt, dt);
+    gl.uniform1f(u.uDissipation, state.damping);
+  });
+  velocity.swap();
+
+  // 2) Wirbelverstärkung und Schwerkraft/Auftrieb der Tinte
+  pass(P.curl, curlTex, u => { gl.uniform1i(u.uVel, bind(0, velocity.read)); });
+  pass(P.forces, velocity.write, u => {
+    gl.uniform1i(u.uVel, bind(0, velocity.read));
+    gl.uniform1i(u.uCurl, bind(1, curlTex));
+    gl.uniform1i(u.uDye, bind(2, dye.read));
+    gl.uniform1f(u.uDt, dt);
+    gl.uniform1f(u.uCurlStrength, state.curl * 0.07);
+    gl.uniform1f(u.uGravity, state.gravity * 0.9 * G.n);
+  });
+  velocity.swap();
+
+  // 3) Druckprojektion -> inkompressible Strömung
+  pass(P.divergence, divergence, u => { gl.uniform1i(u.uVel, bind(0, velocity.read)); });
+  for (let i = 0; i < PRESSURE_ITERATIONS; i++) {
+    pass(P.pressure, pressure.write, u => {
+      gl.uniform1i(u.uPressure, bind(0, pressure.read));
+      gl.uniform1i(u.uDivergence, bind(1, divergence));
+    });
+    pressure.swap();
+  }
+  pass(P.gradient, velocity.write, u => {
+    gl.uniform1i(u.uPressure, bind(0, pressure.read));
+    gl.uniform1i(u.uVel, bind(1, velocity.read));
+  });
+  velocity.swap();
+
+  // 4) Tinte transportieren (vor, zurück, korrigieren)
+  pass(P.advect, dyeFwd, u => {
+    gl.uniform1i(u.uVel, bind(0, velocity.read));
+    gl.uniform1i(u.uSrc, bind(1, dye.read));
+    gl.uniform1f(u.uDt, dt);
+    gl.uniform1f(u.uDissipation, 0);
+  });
+  pass(P.advect, dyeBack, u => {
+    gl.uniform1i(u.uVel, bind(0, velocity.read));
+    gl.uniform1i(u.uSrc, bind(1, dyeFwd));
+    gl.uniform1f(u.uDt, -dt);
+    gl.uniform1f(u.uDissipation, 0);
+  });
+  pass(P.mac, dye.write, u => {
+    gl.uniform1i(u.uVel, bind(0, velocity.read));
+    gl.uniform1i(u.uOrig, bind(1, dye.read));
+    gl.uniform1i(u.uFwd, bind(2, dyeFwd));
+    gl.uniform1i(u.uBack, bind(3, dyeBack));
+    gl.uniform1f(u.uDt, dt);
+  });
+  dye.swap();
+}
+
+function render() {
+  const cam = camera();
+  const basis = [...cam.r, ...cam.u, ...cam.f];
+  const aspect = canvas.width / canvas.height;
+  const light = norm([0.35, 0.8, 0.5]);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.bindVertexArray(quadVAO);
+  gl.useProgram(P.volume.p);
+  let u = P.volume.u;
+  gl.uniform1i(u.uN, G.n);
+  gl.uniform1i(u.uCols, G.cols);
+  gl.uniform1i(u.uDye, bind(0, dye.read));
+  gl.uniform3fv(u.uCamPos, cam.pos);
+  gl.uniformMatrix3fv(u.uCam, false, basis);
+  gl.uniform1f(u.uTanHalf, TAN_HALF);
+  gl.uniform1f(u.uAspect, aspect);
+  gl.uniform1i(u.uSteps, G.steps);
+  gl.uniform3f(u.uLightVox, light[0] * 2.5, light[1] * 2.5, light[2] * 2.5);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // Kanten des Glasbeckens
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindVertexArray(lineVAO);
+  gl.useProgram(P.lines.p);
+  u = P.lines.u;
+  gl.uniform3fv(u.uCamPos, cam.pos);
+  gl.uniformMatrix3fv(u.uCam, false, basis);
+  gl.uniform1f(u.uTanHalf, TAN_HALF);
+  gl.uniform1f(u.uAspect, aspect);
+  gl.drawArrays(gl.LINES, 0, 24);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(quadVAO);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Audio: acht Düsen im Kreis am Beckenboden                          */
+/* ------------------------------------------------------------------ */
+const BANDS = 8;
+const audio = {
+  ctx: null, analyser: null, bins: null, stream: null, streamNode: null,
+  el: null, elNode: null, url: null, file: null,
+  on: false, kind: 'off', choice: 'mic:', sens: 1, color: true,
+  avg: new Float32Array(BANDS), t: 0, token: 0, run: 0
+};
+const audioSel = $('audioSrc'), audioStatus = $('audioStatus'), audioBox = $('audioBox');
+const modeAudio = $('modeAudio'), micGroup = $('micGroup'), otherGroup = $('otherGroup'), fileInput = $('audioFile');
+const meterBars = Array.from(document.querySelectorAll('#meter i'));
+
+function setStatus(text, isError) {
+  audioStatus.textContent = text || '';
+  audioStatus.classList.toggle('err', !!isError);
+}
+function mediaErrorText(err) {
+  switch (err && err.name) {
+    case 'NotAllowedError':
+    case 'SecurityError': return 'Der Zugriff wurde nicht erlaubt oder abgebrochen.';
+    case 'NotFoundError':
+    case 'OverconstrainedError': return 'Es wurde kein passendes Gerät gefunden.';
+    case 'NotReadableError':
+    case 'AbortError': return 'Das Gerät ist belegt oder nicht lesbar.';
+    default: return (err && err.message) || 'Die Quelle konnte nicht gestartet werden.';
+  }
+}
+function ensureAudio() {
+  if (!audio.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) throw new Error('Dieser Browser unterstützt kein Web Audio.');
+    audio.ctx = new AC();
+    audio.analyser = audio.ctx.createAnalyser();
+    audio.analyser.fftSize = 2048;
+    audio.analyser.smoothingTimeConstant = 0.55;
+    audio.bins = new Uint8Array(audio.analyser.frequencyBinCount);
+    const mute = audio.ctx.createGain();
+    mute.gain.value = 0;
+    audio.analyser.connect(mute);
+    mute.connect(audio.ctx.destination);
+  }
+  if (audio.ctx.state === 'suspended') audio.ctx.resume();
+}
+function stopAudio() {
+  audio.token++;
+  if (audio.streamNode) { audio.streamNode.disconnect(); audio.streamNode = null; }
+  if (audio.stream) {
+    audio.stream.getTracks().forEach(t => { t.onended = null; t.stop(); });
+    audio.stream = null;
+  }
+  if (audio.el) audio.el.pause();
+  audio.kind = 'off';
+  audio.avg.fill(0);
+  meterBars.forEach(b => { b.style.height = '2px'; });
+}
+function setAudioOn(on) {
+  audio.on = on;
+  modeAudio.setAttribute('aria-pressed', String(on));
+  audioBox.hidden = !on;
+}
+function audioOff(message, isError) {
+  audio.run++;
+  stopAudio();
+  setAudioOn(false);
+  setStatus(message || '', isError);
+}
+function audioFail(message) {
+  stopAudio();
+  setStatus(message, true);
+}
+async function startAudioChoice() {
+  const run = ++audio.run;
+  const v = audio.choice;
+  setAudioOn(true);
+  try {
+    if (v === 'system') await startSystem();
+    else if (v === 'fileloaded' && audio.file) startFile(audio.file);
+    else await startMic(v.indexOf('mic:') === 0 ? v.slice(4) : '');
+  } catch (err) {
+    if (run === audio.run) audioFail(mediaErrorText(err));
+  }
+}
+function useStream(stream, kind) {
+  audio.stream = stream;
+  audio.streamNode = audio.ctx.createMediaStreamSource(stream);
+  audio.streamNode.connect(audio.analyser);
+  audio.kind = kind;
+  stream.getAudioTracks()[0].onended = () => {
+    if (audio.stream === stream) audioOff('Die Audioquelle wurde beendet.');
+  };
+}
+async function listDevices(selectId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  let inputs = [];
+  try {
+    inputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.label);
+  } catch (_) { return; }
+  if (!inputs.length) return;
+  micGroup.textContent = '';
+  for (const d of inputs) {
+    const o = document.createElement('option');
+    o.value = 'mic:' + d.deviceId;
+    o.textContent = d.label;
+    micGroup.appendChild(o);
+  }
+  if (selectId !== undefined) {
+    const want = 'mic:' + selectId;
+    audio.choice = Array.from(micGroup.children).some(o => o.value === want) ? want : micGroup.children[0].value;
+  }
+  audioSel.value = audio.choice;
+  if (audioSel.value !== audio.choice) {
+    audio.choice = micGroup.children[0].value;
+    audioSel.value = audio.choice;
+  }
+}
+async function startMic(deviceId) {
+  stopAudio();
+  const token = audio.token;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('Mikrofonzugriff ist in diesem Browser hier nicht möglich (Safari sperrt ihn bei lokal geöffneten Dateien). „Audiodatei öffnen …“ funktioniert trotzdem.');
+  }
+  ensureAudio();
+  setStatus('Warte auf die Freigabe des Mikrofons …');
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false
+    },
+    video: false
+  });
+  if (token !== audio.token) { stream.getTracks().forEach(t => t.stop()); return; }
+  useStream(stream, 'mic');
+  const track = stream.getAudioTracks()[0];
+  const settings = track.getSettings ? track.getSettings() : {};
+  audio.choice = 'mic:' + (deviceId || '');
+  await listDevices(settings.deviceId || deviceId || '');
+  setStatus('Eingang aktiv: ' + (track.label || 'Mikrofon'));
+}
+async function startSystem() {
+  stopAudio();
+  const token = audio.token;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    throw new Error('Dieser Browser kann System- oder Tab-Ton nicht aufnehmen.');
+  }
+  ensureAudio();
+  setStatus('Im Freigabe-Dialog einen Tab oder den ganzen Bildschirm wählen und dort „Audio freigeben“ einschalten.');
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  if (token !== audio.token) { stream.getTracks().forEach(t => t.stop()); return; }
+  if (!stream.getAudioTracks().length) {
+    stream.getTracks().forEach(t => t.stop());
+    audioFail('Es wurde kein Ton freigegeben. Bitte die Quelle erneut wählen und im Dialog „Audio freigeben“ einschalten (Tab oder ganzen Bildschirm nehmen; Safari gibt keinen Ton frei).');
+    return;
+  }
+  useStream(stream, 'system');
+  setStatus('System-/Tab-Ton aktiv.');
+}
+function startFile(file) {
+  stopAudio();
+  ensureAudio();
+  if (!audio.el) {
+    audio.el = new Audio();
+    audio.el.loop = true;
+    audio.elNode = audio.ctx.createMediaElementSource(audio.el);
+    audio.elNode.connect(audio.analyser);
+    audio.elNode.connect(audio.ctx.destination);
+    audio.el.addEventListener('error', () => {
+      if (audio.kind === 'file') audioOff('Diese Datei kann nicht abgespielt werden.', true);
+    });
+  }
+  if (audio.file !== file) {
+    if (audio.url) URL.revokeObjectURL(audio.url);
+    audio.url = URL.createObjectURL(file);
+    audio.file = file;
+    audio.el.src = audio.url;
+  }
+  let opt = $('fileOpt');
+  if (!opt) {
+    opt = document.createElement('option');
+    opt.id = 'fileOpt';
+    opt.value = 'fileloaded';
+    otherGroup.insertBefore(opt, otherGroup.lastElementChild);
+  }
+  opt.textContent = 'Datei: ' + file.name;
+  audio.kind = 'file';
+  audio.choice = 'fileloaded';
+  audioSel.value = 'fileloaded';
+  setAudioOn(true);
+  setStatus('Spielt: ' + file.name);
+  const token = audio.token;
+  audio.el.play().catch(() => {
+    if (token === audio.token) setStatus('Wiedergabe wurde blockiert – Quelle bitte erneut auswählen.', true);
+  });
+}
+modeAudio.addEventListener('click', () => {
+  if (audio.on) audioOff();
+  else startAudioChoice();
+});
+audioSel.addEventListener('change', () => {
+  const v = audioSel.value;
+  if (v === 'file') {
+    audioSel.value = audio.choice;
+    try { ensureAudio(); } catch (err) { audioOff(mediaErrorText(err), true); return; }
+    fileInput.value = '';
+    fileInput.click();
+    return;
+  }
+  audio.choice = v;
+  startAudioChoice();
+});
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  audio.run++;
+  try { startFile(file); } catch (err) { audioOff(mediaErrorText(err), true); }
+});
+if (navigator.mediaDevices) {
+  listDevices();
+  if (navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', () => listDevices());
+  }
+}
+$('sens').addEventListener('input', e => { audio.sens = parseFloat(e.target.value); });
+$('audioColor').addEventListener('click', e => {
+  audio.color = !audio.color;
+  e.currentTarget.setAttribute('aria-pressed', String(audio.color));
+});
+
+function audioReact(dt) {
+  if (audio.kind === 'off' || !audio.analyser) return;
+  const an = audio.analyser;
+  an.getByteFrequencyData(audio.bins);
+  const binHz = audio.ctx.sampleRate / an.fftSize;
+  const n = G.n;
+  let liquids = null;
+  audio.t += dt;
+
+  for (let i = 0; i < BANDS; i++) {
+    const f0 = 40 * Math.pow(300, i / BANDS), f1 = 40 * Math.pow(300, (i + 1) / BANDS);
+    const lo = Math.max(1, Math.floor(f0 / binHz));
+    const hi = Math.min(audio.bins.length, Math.max(lo + 1, Math.ceil(f1 / binHz)));
+    let sum = 0;
+    for (let k = lo; k < hi; k++) sum += audio.bins[k];
+    const mean = sum / Math.max(1, hi - lo) / 255;
+    const lvl = Math.max(0, (mean - (0.40 - 0.025 * i)) / 0.5) * audio.sens;
+    const flux = Math.max(0, lvl - audio.avg[i]);
+    audio.avg[i] += (lvl - audio.avg[i]) * Math.min(1, dt * 4);
+    const e = Math.min(1.2, lvl * 0.45 + flux * 2.2);
+
+    meterBars[i].style.height = Math.max(2, Math.min(1, e) * 28) + 'px';
+    if (state.paused || e < 0.06) continue;
+
+    // Düse i sitzt auf einem Kreis am Boden und schießt nach oben
+    const ang = i / BANDS * Math.PI * 2;
+    const x = (0.5 + 0.3 * Math.cos(ang)) * n, z = (0.5 + 0.3 * Math.sin(ang)) * n;
+    const vy = e * 1.3 * n;
+    const sway = 0.3 * vy;
+    const vel = [Math.sin(audio.t * 0.8 + i * 1.9) * sway, vy, Math.cos(audio.t * 0.7 + i * 2.3) * sway];
+    splat(velocity, [x, 0, z], [x, 0.14 * n, z], 0.07 * n, vel, 0, Math.min(1, e * 1.4));
+    if (audio.color && e > 0.3) {
+      if (!liquids) liquids = state.colors.map(absorbance);
+      splat(dye, [x, 0, z], [x, (0.03 + 0.07 * e) * n, z], (0.035 + 0.03 * e) * n, liquids[i % 3], 1, Math.min(1, e * 0.6));
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Kamera: Bewegung erkennen (optischer Fluss)                        */
+/* ------------------------------------------------------------------ */
+const cam = {
+  on: false, available: false, stream: null, choice: '', sens: 1, token: 0, notFound: false,
+  color: 'off',
+  palW: 6, palH: 4, pal: null, palNext: null, palTex: null,
+  W: 64, H: 0, gw: 0, gh: 0,
+  canvas: null, ctx: null, tmp: null, prev: null, cur: null,
+  flow: null, fu: null, fw: null, fp: null, fm: null, tex: null,
+  hasPrev: false, lastTime: -1, lastStamp: 0, warmUntil: 0, fresh: false,
+  useVFC: typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype
+};
+const CAM_MAX_FLOW = 3;
+const camVideo = $('camVideo'), camSel = $('camSrc'), camBox = $('camBox'), camStatus = $('camStatus'), modeCam = $('modeCam');
+
+function setCamStatus(text, isError) {
+  camStatus.textContent = text || '';
+  camStatus.classList.toggle('err', !!isError);
+}
+async function checkCameras(selectId) {
+  let list = [], all = [];
+  const md = navigator.mediaDevices;
+  const supported = !!(md && md.enumerateDevices && md.getUserMedia);
+  if (supported) {
+    try { all = await md.enumerateDevices(); } catch (_) {}
+    list = all.filter(d => d.kind === 'videoinput');
+  }
+  cam.available = supported && (list.length > 0 || (all.length === 0 && !cam.notFound));
+  modeCam.disabled = !cam.available && !cam.on;
+  modeCam.textContent = cam.available || cam.on ? 'Kamera' : 'Keine Kamera';
+  const labeled = list.filter(d => d.label);
+  if (!labeled.length) return;
+  camSel.textContent = '';
+  for (const d of labeled) {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label;
+    camSel.appendChild(o);
+  }
+  if (selectId !== undefined && labeled.some(d => d.deviceId === selectId)) cam.choice = selectId;
+  camSel.value = cam.choice;
+  if (camSel.value !== cam.choice) {
+    cam.choice = camSel.options[0].value;
+    camSel.value = cam.choice;
+  }
+}
+function setCamOn(on) {
+  cam.on = on;
+  modeCam.setAttribute('aria-pressed', String(on));
+  camBox.hidden = !on;
+}
+function stopCam() {
+  cam.token++;
+  if (cam.stream) {
+    cam.stream.getTracks().forEach(t => { t.onended = null; t.stop(); });
+    cam.stream = null;
+  }
+  camVideo.srcObject = null;
+  cam.hasPrev = false;
+  cam.lastTime = -1;
+}
+function camOff(message, isError) {
+  stopCam();
+  setCamOn(false);
+  setCamStatus(message || '', isError);
+  checkCameras();
+}
+async function startCam() {
+  stopCam();
+  const token = cam.token;
+  setCamOn(true);
+  setCamStatus('Warte auf die Freigabe der Kamera …');
+  try {
+    const id = cam.choice;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: id ? { exact: id } : undefined, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } },
+      audio: false
+    });
+    if (token !== cam.token) { stream.getTracks().forEach(t => t.stop()); return; }
+    cam.stream = stream;
+    const track = stream.getVideoTracks()[0];
+    track.onended = () => { if (cam.stream === stream) camOff('Die Kamera wurde getrennt.'); };
+    camVideo.srcObject = stream;
+    try { await camVideo.play(); } catch (_) {}
+    if (token !== cam.token) return;
+    if (cam.useVFC) {
+      const onFrame = () => {
+        if (cam.stream !== stream) return;
+        cam.fresh = true;
+        camVideo.requestVideoFrameCallback(onFrame);
+      };
+      camVideo.requestVideoFrameCallback(onFrame);
+    }
+    const settings = track.getSettings ? track.getSettings() : {};
+    await checkCameras(settings.deviceId || id);
+    setCamStatus('Kamera aktiv: ' + (track.label || 'Kamera') + ' – wirkt von der Vorderseite des Beckens.');
+  } catch (err) {
+    if (token !== cam.token) return;
+    if (err && err.name === 'NotFoundError') cam.notFound = true;
+    camOff(mediaErrorText(err), true);
+  }
+}
+modeCam.addEventListener('click', () => {
+  if (cam.on) camOff();
+  else startCam();
+});
+camSel.addEventListener('change', () => { cam.choice = camSel.value; startCam(); });
+$('camSens').addEventListener('input', e => { cam.sens = parseFloat(e.target.value); });
+const camColorButtons = Array.from(document.querySelectorAll('#camColorSeg button'));
+camColorButtons.forEach(btn => btn.addEventListener('click', () => {
+  cam.color = btn.dataset.cc;
+  camColorButtons.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+}));
+checkCameras();
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => { cam.notFound = false; checkCameras(); });
+}
+
+function smallTexture(unit) {
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+
+function updatePalette(now) {
+  const n = cam.palW * cam.palH;
+  if (!cam.pal) {
+    cam.pal = new Uint8Array(n * 4);
+    cam.palNext = new Float64Array(n);
+    cam.palTex = smallTexture(5);
+  }
+  let dirty = false;
+  for (let i = 0; i < n; i++) {
+    if (now < cam.palNext[i]) continue;
+    cam.palNext[i] = now + 500 + Math.random() * 1500;
+    const h = Math.random() * 6, s = 0.85 + Math.random() * 0.15;
+    const f = h - Math.floor(h), p = 1 - s, q = 1 - s * f, t = 1 - s * (1 - f);
+    const rgb = [[1, t, p], [q, 1, p], [p, 1, t], [p, q, 1], [t, p, 1], [1, p, q]][Math.floor(h) % 6];
+    cam.pal[i * 4] = Math.round(rgb[0] * 255);
+    cam.pal[i * 4 + 1] = Math.round(rgb[1] * 255);
+    cam.pal[i * 4 + 2] = Math.round(rgb[2] * 255);
+    cam.pal[i * 4 + 3] = 255;
+    dirty = true;
+  }
+  gl.activeTexture(gl.TEXTURE5);
+  gl.bindTexture(gl.TEXTURE_2D, cam.palTex);
+  if (dirty) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cam.palW, cam.palH, 0, gl.RGBA, gl.UNSIGNED_BYTE, cam.pal);
+}
+
+function camAllocate(W, H) {
+  cam.H = H;
+  cam.gw = W / 2;
+  cam.gh = H / 2;
+  if (!cam.canvas) cam.canvas = document.createElement('canvas');
+  cam.canvas.width = W;
+  cam.canvas.height = H;
+  cam.ctx = cam.canvas.getContext('2d', { willReadFrequently: true });
+  cam.tmp = new Float32Array(W * H);
+  cam.prev = new Float32Array(W * H);
+  cam.cur = new Float32Array(W * H);
+  const cells = cam.gw * cam.gh;
+  cam.flow = new Uint8Array(cells * 4);
+  cam.fu = new Float32Array(cells);
+  cam.fw = new Float32Array(cells);
+  cam.fp = new Float32Array(cells);
+  cam.fm = new Float32Array(cells);
+  cam.hasPrev = false;
+  if (!cam.tex) cam.tex = smallTexture(4);
+}
+
+function camReact() {
+  if (!cam.stream || state.paused) return;
+  const v = camVideo;
+  if (v.readyState < 2 || !v.videoWidth) return;
+  if (cam.useVFC) {
+    if (!cam.fresh) return;
+    cam.fresh = false;
+  } else {
+    if (v.currentTime === cam.lastTime) return;
+    cam.lastTime = v.currentTime;
+  }
+
+  const W = cam.W;
+  const H = Math.max(8, Math.round(W * v.videoHeight / v.videoWidth / 2) * 2);
+  if (H !== cam.H) camAllocate(W, H);
+
+  cam.ctx.drawImage(v, 0, 0, W, H);
+  const px = cam.ctx.getImageData(0, 0, W, H).data;
+  const tmp = cam.tmp, cur = cam.cur, prev = cam.prev, N = W * H;
+  for (let k = 0; k < N; k++) tmp[k] = 0.299 * px[k * 4] + 0.587 * px[k * 4 + 1] + 0.114 * px[k * 4 + 2];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const k = y * W + x;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) { cur[k] = tmp[k]; continue; }
+      cur[k] = (tmp[k - W - 1] + tmp[k - W] + tmp[k - W + 1] + tmp[k - 1] + tmp[k] + tmp[k + 1] +
+                tmp[k + W - 1] + tmp[k + W] + tmp[k + W + 1]) / 9;
+    }
+  }
+  if (cam.hasPrev) {
+    let same = true;
+    for (let k = 0; k < N; k++) if (cur[k] !== prev[k]) { same = false; break; }
+    if (same) return;
+  }
+  const stamp = performance.now();
+  const camDt = Math.min(Math.max((stamp - cam.lastStamp) / 1000, 1 / 60), 0.2);
+  cam.lastStamp = stamp;
+  cam.prev = cur;
+  cam.cur = prev;
+  if (!cam.hasPrev) { cam.hasPrev = true; cam.warmUntil = stamp + 800; return; }
+  if (stamp < cam.warmUntil) return;
+
+  let meanDiff = 0;
+  for (let k = 0; k < N; k++) meanDiff += cur[k] - prev[k];
+  meanDiff /= N;
+
+  // Optischer Fluss je Rasterzelle (Lucas-Kanade über ein 6x6-Fenster)
+  const gw = cam.gw, gh = cam.gh, flow = cam.flow;
+  const fu = cam.fu, fw = cam.fw, fp = cam.fp, fm = cam.fm;
+  for (let j = 0; j < gh; j++) {
+    const ys = Math.min(Math.max(j * 2 - 2, 1), H - 7);
+    for (let i = 0; i < gw; i++) {
+      const xs = Math.min(Math.max(i * 2 - 2, 1), W - 7);
+      let sxx = 0, sxy = 0, syy = 0, sxt = 0, syt = 0, sat = 0;
+      for (let y = ys; y < ys + 6; y++) {
+        for (let x = xs; x < xs + 6; x++) {
+          const k = y * W + x;
+          const ix = (cur[k + 1] - cur[k - 1] + prev[k + 1] - prev[k - 1]) * 0.25;
+          const iy = (cur[k + W] - cur[k - W] + prev[k + W] - prev[k - W]) * 0.25;
+          const it = cur[k] - prev[k] - meanDiff;
+          sxx += ix * ix; sxy += ix * iy; syy += iy * iy;
+          sxt += ix * it; syt += iy * it;
+          sat += Math.abs(it);
+        }
+      }
+      const a = sxx + 60, c = syy + 60;
+      const det = a * c - sxy * sxy;
+      let u = -(c * sxt - sxy * syt) / det;
+      let w = -(a * syt - sxy * sxt) / det;
+      const mag = Math.sqrt(u * u + w * w);
+      if (mag > CAM_MAX_FLOW) { u *= CAM_MAX_FLOW / mag; w *= CAM_MAX_FLOW / mag; }
+      const motion = Math.min(1, Math.max(0, (sat / 36 / 255 - 0.018) * 14 * cam.sens));
+      const push = motion * Math.min(1, mag / 0.25);
+      const g = j * gw + i;
+      fu[g] = u * push; fw[g] = w * push; fp[g] = push; fm[g] = motion;
+    }
+  }
+  let active = 0;
+  for (let g = 0; g < gw * gh; g++) if (fm[g] > 0.3) active++;
+  if (active > 0.5 * gw * gh) return;       // ganzes Bild ändert sich: Licht/Belichtung, keine Bewegung
+
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      let su = 0, sw = 0, sp = 0, sm = 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        const jj = Math.min(Math.max(j + dj, 0), gh - 1);
+        for (let di = -1; di <= 1; di++) {
+          const g = jj * gw + Math.min(Math.max(i + di, 0), gw - 1);
+          su += fu[g]; sw += fw[g]; sp += fp[g]; sm += fm[g];
+        }
+      }
+      const uu = sp > 1e-4 ? su / sp : 0, ww = sp > 1e-4 ? sw / sp : 0;
+      const o = ((gh - 1 - j) * gw + (gw - 1 - i)) * 4;      // gespiegelt, y nach oben
+      flow[o] = 128 + Math.round(-uu / CAM_MAX_FLOW * 127);
+      flow[o + 1] = 128 + Math.round(-ww / CAM_MAX_FLOW * 127);
+      flow[o + 2] = Math.round(sm / 9 * 255);
+      flow[o + 3] = Math.round(sp / 9 * 255);
+    }
+  }
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, cam.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gw, gh, 0, gl.RGBA, gl.UNSIGNED_BYTE, flow);
+  updatePalette(stamp);
+
+  const speed = Math.min(CAM_MAX_FLOW / camDt, 1.5 * W);
+  pass(P.field, velocity.write, u => {
+    gl.uniform1i(u.uTarget, bind(0, velocity.read));
+    gl.uniform1i(u.uFlow, 4);
+    gl.uniform1i(u.uPalette, 5);
+    gl.uniform2f(u.uVelScale, speed / W * G.n, speed / H * G.n);
+    gl.uniform1f(u.uRandom, 0);
+    gl.uniform1f(u.uDyeMode, 0);
+    gl.uniform1f(u.uBias, 0);
+    gl.uniform1f(u.uGain, 0.3);
+  });
+  velocity.swap();
+
+  if (cam.color !== 'off') {
+    const col = activeAbsorbance();
+    pass(P.field, dye.write, u => {
+      gl.uniform1i(u.uTarget, bind(0, dye.read));
+      gl.uniform1i(u.uFlow, 4);
+      gl.uniform1i(u.uPalette, 5);
+      gl.uniform3f(u.uColor, col[0], col[1], col[2]);
+      gl.uniform1f(u.uRandom, cam.color === 'random' ? 1 : 0);
+      gl.uniform1f(u.uDyeMode, 1);
+      gl.uniform1f(u.uBias, 0.3);
+      gl.uniform1f(u.uGain, 1.5);
+    });
+    dye.swap();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Bedienfeld                                                         */
+/* ------------------------------------------------------------------ */
+const swatches = Array.from(document.querySelectorAll('.sw'));
+const colorPick = $('colorPick');
+
+function refreshSwatches() {
+  swatches.forEach((el, i) => {
+    if (i < 3) el.style.background = state.colors[i];
+    el.setAttribute('aria-checked', String(i === state.active));
+  });
+  meterBars.forEach((b, i) => { b.style.background = state.colors[i % 3]; });
+  colorPick.disabled = state.active === 3;
+  if (state.active < 3) colorPick.value = state.colors[state.active];
+}
+function selectLiquid(i) { state.active = i; refreshSwatches(); }
+swatches.forEach((el, i) => el.addEventListener('click', () => selectLiquid(i)));
+colorPick.addEventListener('input', () => {
+  if (state.active < 3) { state.colors[state.active] = colorPick.value; refreshSwatches(); }
+});
+
+function setTool(t) {
+  state.tool = t;
+  $('toolPour').setAttribute('aria-pressed', String(t === 'pour'));
+  $('toolStir').setAttribute('aria-pressed', String(t === 'stir'));
+}
+$('toolPour').addEventListener('click', () => setTool('pour'));
+$('toolStir').addEventListener('click', () => setTool('stir'));
+
+$('depth').addEventListener('input', e => { state.depth = parseFloat(e.target.value); });
+$('brush').addEventListener('input', e => { state.brush = parseFloat(e.target.value); });
+$('visc').addEventListener('input', e => { state.damping = parseFloat(e.target.value); });
+$('curl').addEventListener('input', e => { state.curl = parseFloat(e.target.value); });
+$('gravity').addEventListener('input', e => { state.gravity = parseFloat(e.target.value); });
+
+document.querySelectorAll('[data-preset]').forEach(el => {
+  el.addEventListener('click', () => applyPreset(parseInt(el.dataset.preset, 10)));
+});
+
+function toggleButton(id, key, after) {
+  $(id).addEventListener('click', () => {
+    state[key] = !state[key];
+    $(id).setAttribute('aria-pressed', String(state[key]));
+    if (after) after();
+  });
+}
+toggleButton('auto', 'auto');
+toggleButton('spin', 'spin');
+toggleButton('modeMouse', 'mouse', () => {
+  if (!state.mouse) for (const p of pointers.values()) if (p.mode === 'tool') p.up = true;
+});
+function setPaused(on) {
+  state.paused = on;
+  $('pause').setAttribute('aria-pressed', String(on));
+  $('pause').textContent = on ? 'Weiter' : 'Pause';
+}
+$('pause').addEventListener('click', () => setPaused(!state.paused));
+
+$('toggle').addEventListener('click', () => {
+  const closed = $('panel').classList.toggle('closed');
+  $('toggle').textContent = closed ? '+' : '–';
+  $('body').inert = closed;
+});
+
+const perf = { t: 0, n: 0, seconds: 0, auto: true };
+function setQuality(q) {
+  quality = q;
+  G = QUALITY[q];
+  $('quality').value = q;
+  allocate();
+  applyPreset(state.preset);
+  autoPrev = null;
+  for (const p of pointers.values()) if (p.mode === 'tool') p.up = true;
+}
+$('quality').addEventListener('change', e => {
+  perf.auto = false;
+  setQuality(e.target.value);
+});
+
+window.addEventListener('keydown', e => {
+  const tag = e.target && e.target.tagName;
+  if (tag === 'SELECT') return;
+  if (e.code === 'Space' && tag !== 'BUTTON' && tag !== 'INPUT') {
+    e.preventDefault();
+    setPaused(!state.paused);
+  } else if (e.key >= '1' && e.key <= '4') {
+    selectLiquid(parseInt(e.key, 10) - 1);
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Start                                                              */
+/* ------------------------------------------------------------------ */
+allocate();
+refreshSwatches();
+applyPreset(0);
+
+let last = performance.now();
+function frame(now) {
+  const raw = (now - last) / 1000;
+  last = now;
+  const dt = Math.min(Math.max(raw, 1 / 240), 1 / 30);
+
+  // Bildrate messen; ist der Rechner zu langsam, einmalig die Qualität senken
+  if (raw < 0.5) {
+    perf.t += raw;
+    perf.n++;
+    if (perf.t >= 1) {
+      const fps = perf.n / perf.t;
+      $('fps').textContent = Math.round(fps) + ' fps';
+      perf.t = 0; perf.n = 0; perf.seconds++;
+      if (perf.auto && perf.seconds >= 2 && fps < 22 && quality !== 'low') {
+        setQuality(QUALITY_ORDER[QUALITY_ORDER.indexOf(quality) - 1]);
+        perf.seconds = 0;
+      }
+    }
+  }
+
+  resizeCanvas();
+  if (state.spin && !state.paused) view.yaw += dt * 0.18;
+  gl.bindVertexArray(quadVAO);
+  applyInputs(dt);
+  if (!state.paused) step(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
