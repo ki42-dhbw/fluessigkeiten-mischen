@@ -3,15 +3,15 @@
 Interaktive Flüssigkeits-Simulation für den Browser. Farbige Flüssigkeiten strömen, verwirbeln und
 mischen sich wie Tinte (Blau + Gelb ergibt Grün) – steuerbar mit Maus, Ton und Kamera.
 
-## ▶ [Simulation direkt starten](https://ki42-dhbw.github.io/fluessigkeiten-mischen/)
+## ▶ [Simulation direkt starten](https://ki42-dhbw.github.io/fluessigkeiten-mische/)
 
 Es muss nichts installiert werden. Oben rechts lässt sich zwischen **2D** und **3D** umschalten.
 
 | Version | Link |
 |---|---|
-| 2D und 3D umschaltbar | <https://ki42-dhbw.github.io/fluessigkeiten-mischen/> |
-| nur 2D | <https://ki42-dhbw.github.io/fluessigkeiten-mischen/fluessigkeiten-mischen.html> |
-| nur 3D | <https://ki42-dhbw.github.io/fluessigkeiten-mischen/fluessigkeiten-3d.html> |
+| 2D und 3D umschaltbar | <https://ki42-dhbw.github.io/fluessigkeiten-mische/> |
+| nur 2D | <https://ki42-dhbw.github.io/fluessigkeiten-mische/fluessigkeiten-mischen.html> |
+| nur 3D | <https://ki42-dhbw.github.io/fluessigkeiten-mische/fluessigkeiten-3d.html> |
 
 ## Was man damit machen kann
 
