@@ -7,6 +7,8 @@ mischen sich wie Tinte (Blau + Gelb ergibt Grün) – steuerbar mit Maus, Ton un
 
 Es muss nichts installiert werden. Oben rechts lässt sich zwischen **2D** und **3D** umschalten.
 
+> Erstellt mit **Claude Fable 5.2** (Anthropic) in Claude Code.
+
 | Version | Link |
 |---|---|
 | 2D und 3D umschaltbar | <https://ki42-dhbw.github.io/fluessigkeiten-mischen/> |
@@ -56,3 +58,9 @@ Reines HTML, CSS und JavaScript mit WebGL, ohne externe Bibliotheken. Die Ström
 Grafikkarte berechnet (Stable-Fluids-Verfahren); in 3D liegt das Raster als Kachel-Atlas in einer
 Textur und wird per Raymarching dargestellt. Die Farben werden als Lichtabsorption gespeichert,
 dadurch mischen sie sich subtraktiv wie echte Tinte.
+
+## Entstehung
+
+Der gesamte Code dieses Projekts wurde mit dem KI-Modell **Claude Fable 5.2** von Anthropic erstellt,
+im Dialog über Claude Code: Die Ideen und Wünsche kamen als kurze Anweisungen in Alltagssprache,
+Programmierung und Tests übernahm das Modell.
